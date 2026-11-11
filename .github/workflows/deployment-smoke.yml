@@ -1,0 +1,116 @@
+name: Deployment smoke tests
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/deployment-smoke.yml'
+      - 'Dockerfile'
+      - '.dockerignore'
+      - '.env.example'
+      - 'compose.yaml'
+      - 'docs/deployment.zh-CN.md'
+      - 'global.json'
+      - 'src/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Empty SQLite database (${{ matrix.mode }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [compose, systemd]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        if: matrix.mode == 'systemd'
+        with:
+          global-json-file: global.json
+
+      - name: Prepare isolated deployment configuration
+        shell: bash
+        run: |
+          umask 077
+          cp .env.example .env
+          password=$(openssl rand -hex 24)
+          echo "::add-mask::$password"
+          printf 'SMOKE_PASSWORD=%s\n' "$password" >> "$GITHUB_ENV"
+          for name in Jwt__SecretKey Jwt__RefreshTokenPepper; do
+            value=$(openssl rand -hex 32)
+            echo "::add-mask::$value"
+            sed -i "s/^$name=.*/$name=$value/" .env
+          done
+
+      - name: Build, initialize, and start Docker Compose
+        if: matrix.mode == 'compose'
+        run: |
+          docker compose build server
+          printf 'admin\nadmin@example.com\n%s\n%s\n' "$SMOKE_PASSWORD" "$SMOKE_PASSWORD" |
+            docker compose run --rm -T server --init-db
+          docker compose up -d
+
+      - name: Publish, initialize, and start systemd service
+        if: matrix.mode == 'systemd'
+        run: |
+          dotnet publish src/RelaxKon.Auth/RelaxKon.Auth.csproj -c Release -o "$RUNNER_TEMP/relaxkon-publish"
+          sudo useradd --system --user-group --no-create-home relaxkon
+          sudo install -d -m 0755 /opt/relaxkon
+          sudo cp -R "$RUNNER_TEMP/relaxkon-publish/." /opt/relaxkon/
+          sudo install -d -m 0750 -o relaxkon -g relaxkon /var/lib/relaxkon /etc/relaxkon
+          sed 's@/data/@/var/lib/relaxkon/@g' .env >> "$RUNNER_TEMP/server.env"
+          printf '\nConnectionStrings__Redis=\nASPNETCORE_URLS=http://127.0.0.1:6000\n' >> "$RUNNER_TEMP/server.env"
+          sudo install -m 0600 -o relaxkon -g relaxkon "$RUNNER_TEMP/server.env" /etc/relaxkon/server.env
+
+          dotnet_path=$(command -v dotnet)
+          printf 'admin\nadmin@example.com\n%s\n%s\n' "$SMOKE_PASSWORD" "$SMOKE_PASSWORD" |
+            sudo -u relaxkon bash -c 'cd /opt/relaxkon && set -a && . /etc/relaxkon/server.env && exec "$1" RelaxKon.Auth.dll --init-db' bash "$dotnet_path"
+
+          sudo tee /etc/systemd/system/relaxkon.service >/dev/null <<EOF
+          [Unit]
+          Description=RelaxKon Server
+          After=network.target
+
+          [Service]
+          User=relaxkon
+          WorkingDirectory=/opt/relaxkon
+          Environment=ASPNETCORE_ENVIRONMENT=Production
+          EnvironmentFile=/etc/relaxkon/server.env
+          ExecStart=$dotnet_path /opt/relaxkon/RelaxKon.Auth.dll
+          Restart=on-failure
+
+          [Install]
+          WantedBy=multi-user.target
+          EOF
+          sudo systemctl daemon-reload
+          sudo systemctl enable --now relaxkon.service
+          systemctl is-active --quiet relaxkon.service
+
+      - name: Sign in and verify administrator privileges
+        run: |
+          base=http://127.0.0.1:6000
+          curl --silent --show-error --retry 20 --retry-delay 1 --retry-connrefused --max-time 5 "$base/api/role" -o /dev/null
+          response=$(printf '{"username":"admin","password":"%s"}' "$SMOKE_PASSWORD" |
+            curl --silent --show-error --fail --max-time 5 \
+              -H 'Content-Type: application/json' --data-binary @- "$base/api/auth/login")
+          token=$(jq -er '.accessToken | strings | select(length > 0)' <<< "$response")
+          echo "::add-mask::$token"
+          curl --silent --show-error --fail -H "Authorization: Bearer $token" "$base/api/role" |
+            jq -e 'any(.[]; .code == "admin")' >/dev/null
+
+      - name: Show deployment logs on failure
+        if: failure()
+        env:
+          MODE: ${{ matrix.mode }}
+        run: |
+          if [[ "$MODE" == compose ]]; then
+            docker compose ps --all
+            docker compose logs --tail=100 server
+          else
+            sudo journalctl -u relaxkon.service -n 100 --no-pager
+          fi

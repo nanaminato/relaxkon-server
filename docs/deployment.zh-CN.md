@@ -68,7 +68,7 @@ docker compose logs --tail=100 server
 
 ## 非容器部署（终端初始化，再由 systemd 启动）
 
-先按 [构建与运行](deployment.md#构建与运行) 发布后端。下面假设发布产物位于 `/opt/relaxkon`，服务账号为 `relaxkon`，且已安装 .NET 10 ASP.NET Core 运行时。将数据库连接串、JWT 和按需启用的 SMTP 配置放入 `/etc/relaxkon/server.env`。每行使用 `KEY=value` 格式，无需写 `export`。限制该文件的读取权限，并允许服务账号读取它。
+先按 [构建与运行](deployment.md#构建与运行) 发布后端。下面假设发布产物位于 `/opt/relaxkon`，服务账号为 `relaxkon`，且已安装 .NET 10 ASP.NET Core 运行时。将数据库连接串、JWT 和按需启用的 SMTP 配置放入 `/etc/relaxkon/server.env`。每行使用 `KEY=value` 格式，无需写 `export`。不使用 Redis 时显式设置 `ConnectionStrings__Redis=`，以覆盖发布目录中可能存在的默认连接串。可用 `ASPNETCORE_URLS=http://127.0.0.1:6000` 设置本机反向代理的监听地址。含空格或 `$` 的值用单引号包裹。限制该文件的读取权限，并允许服务账号读取它。
 
 使用 SQLite 时，设置 `Database__Provider=Sqlite`，连接串使用绝对路径，例如 `ConnectionStrings__ciko='Data Source=/var/lib/relaxkon/relaxkon.db'`。确保服务账号可以写入数据库目录和 `DataProtection__KeyPath` 指定的密钥目录。
 
