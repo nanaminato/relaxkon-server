@@ -69,7 +69,7 @@ public sealed class DatabaseBootstrapper
                     "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = @database", connection);
                 count.Parameters.AddWithValue("@database", database);
                 if (Convert.ToInt32(await count.ExecuteScalarAsync(cancellationToken)) != 0)
-                    throw new InvalidOperationException("拒绝初始化非空数据库；已有数据库请使用升级脚本或 --create-admin。");
+                    throw new InvalidOperationException("拒绝初始化非空数据库；已有兼容数据库如需创建首个管理员，请使用 --create-admin。");
                 await using var create = new MySqlCommand(
                     $"CREATE DATABASE IF NOT EXISTS `{database}` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci", connection);
                 await create.ExecuteNonQueryAsync(cancellationToken);
@@ -134,7 +134,7 @@ public sealed class DatabaseBootstrapper
             await using var count = new SqliteCommand(
                 "SELECT COUNT(*) FROM sqlite_schema WHERE name NOT GLOB 'sqlite_*'", connection);
             if (Convert.ToInt64(await count.ExecuteScalarAsync(cancellationToken)) != 0)
-                throw new InvalidOperationException("拒绝初始化非空数据库；已有数据库请使用升级脚本或 --create-admin。");
+                throw new InvalidOperationException("拒绝初始化非空数据库；已有兼容数据库如需创建首个管理员，请使用 --create-admin。");
             await using var journal = new SqliteCommand("PRAGMA journal_mode=WAL", connection);
             var mode = Convert.ToString(await journal.ExecuteScalarAsync(cancellationToken));
             if (!string.Equals(mode, "wal", StringComparison.OrdinalIgnoreCase))
@@ -149,7 +149,7 @@ public sealed class DatabaseBootstrapper
             await using var count = new SqliteCommand(
                 "SELECT COUNT(*) FROM sqlite_schema WHERE name NOT GLOB 'sqlite_*'", connection, transaction);
             if (Convert.ToInt64(await count.ExecuteScalarAsync(cancellationToken)) != 0)
-                throw new InvalidOperationException("拒绝初始化非空数据库；已有数据库请使用升级脚本或 --create-admin。");
+                throw new InvalidOperationException("拒绝初始化非空数据库；已有兼容数据库如需创建首个管理员，请使用 --create-admin。");
             foreach (var name in new[] { "SqliteSchema", "SqliteSeed" })
             {
                 await using var script = new SqliteCommand(ReadScript(name), connection, transaction) { CommandTimeout = 120 };

@@ -1,5 +1,7 @@
 # APIMart GPT Image 2.5 / 2.6（2026-11-05）
 
+> 文中涉及旧库升级脚本的段落为历史记录。当前版本的部署入口见 [部署与配置](deployment.md)。
+
 恢复 `/image-studio/APIMart-image`，独立于 OpenAI 直连入口。后台使用启用的 APIMart 类型供应商密钥，不向浏览器暴露密钥。旧 GPT Image 2.0 创建端点继续返回 410。
 
 | 模型 | 主要能力与当前限制 |

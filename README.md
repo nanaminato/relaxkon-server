@@ -22,6 +22,8 @@
 
 ## 快速启动
 
+容器部署见 [Docker Compose 首次部署](docs/deployment.md#docker-compose-首次部署)。
+
 先准备 .NET SDK 10。数据库可选 MySQL 8.4+ 或 SQLite；不配置 provider 时保持 MySQL。无需安装 MySQL 的部署见 [SQLite 首次部署](docs/database-providers.md#sqlite-首次部署无需-mysql)。以下保留 MySQL 开发流程，并创建本地配置：
 
 ```bash

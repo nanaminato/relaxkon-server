@@ -95,7 +95,7 @@ public class SqliteBootstrapTests
         await new DatabaseSchemaValidationService(configuration, registration, smtp, accountOnly).StartAsync(default);
         var validator = new DatabaseSchemaValidationService(configuration, registration, smtp, withSource);
         var error = Assert.ThrowsAsync<InvalidOperationException>(() => validator.StartAsync(default));
-        Assert.That(error!.Message, Does.Contain("feature-concurrency.sql"));
+        Assert.That(error!.Message, Does.Contain("FeatureAccessLeaseSources"));
 
         using var script = new StreamReader(typeof(SqliteBootstrapTests).Assembly.GetManifestResourceStream("SqliteFeatureConcurrency.sql")!);
         command.CommandText = await script.ReadToEndAsync();

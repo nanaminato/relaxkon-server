@@ -369,3 +369,6 @@ FodyWeavers.xsd
 *.sqlite-*
 *.sqlite3
 *.sqlite3-*
+
+# Docker Compose deployment settings
+/.env

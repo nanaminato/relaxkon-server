@@ -83,7 +83,7 @@ public class RegistrationDatabaseTests
         await RelaxKon.Auth.Bootstrap.ArchitectureSchemaCheck.Validate(connection.ConnectionString, includeRegistration: true);
         await database.Execute("DROP TABLE RegistrationEmailChallenges");
         var error = Assert.ThrowsAsync<InvalidOperationException>(() => RelaxKon.Auth.Bootstrap.ArchitectureSchemaCheck.Validate(connection.ConnectionString, includeRegistration: true));
-        Assert.That(error!.Message, Does.Contain("registration-email-verification.sql"));
+        Assert.That(error!.Message, Does.Contain("RegistrationEmailChallenges"));
         await database.Execute(MySqlTestDatabase.Resource("RegistrationEmail.sql"));
         Assert.That(await database.Scalar<long>("SELECT COUNT(*) FROM Accounts"), Is.EqualTo(2));
         await RelaxKon.Auth.Bootstrap.ArchitectureSchemaCheck.Validate(connection.ConnectionString, includeRegistration: true);

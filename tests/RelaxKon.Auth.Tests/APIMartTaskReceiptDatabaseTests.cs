@@ -60,7 +60,7 @@ public class APIMartTaskReceiptDatabaseTests
         await fixture.Execute("INSERT INTO FeatureAccessTasks(TaskId,AccountId) VALUES('legacy-before-upgrade',1); ALTER TABLE FeatureAccessTasks DROP COLUMN SupplierKeyId");
         using var connection = fixture.Connection();
         var error = Assert.ThrowsAsync<InvalidOperationException>(() => ArchitectureSchemaCheck.Validate(connection.ConnectionString));
-        Assert.That(error!.Message, Does.Contain("apimart-task-route-upgrade.sql"));
+        Assert.That(error!.Message, Does.Contain("FeatureAccessTasks."));
         await fixture.Execute(MySqlTestDatabase.Resource("ApimartTaskRoute.sql"));
         await ArchitectureSchemaCheck.Validate(connection.ConnectionString);
         Assert.That(await fixture.Scalar<long>("SELECT COUNT(*) FROM FeatureAccessTasks WHERE TaskId='legacy-before-upgrade' AND AccountId=1 AND SupplierKeyId IS NULL"), Is.EqualTo(1));

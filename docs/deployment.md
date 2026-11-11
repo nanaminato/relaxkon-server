@@ -1,5 +1,31 @@
 # 部署与配置
 
+## Docker Compose 首次部署
+
+在仓库根目录将 `.env.example` 复制为 `.env`，分别填入两个独立的随机值作为 `Jwt__SecretKey` 和 `Jwt__RefreshTokenPepper`，例如分别运行两次 `openssl rand -hex 32`。数据库、Redis 和 SMTP 凭据均通过该文件传入容器。连接串或密码含有 `$` 时使用单引号包裹，避免 Compose 展开变量。
+
+默认使用 SQLite，数据库和 ASP.NET Core Data Protection 密钥保存在同一个 Docker 命名卷。使用 MySQL 时，先在容器可访问的 MySQL 8.4 服务中创建空数据库，并赋予初始化账号建表、建索引和建触发器所需权限。随后修改 `.env`：
+
+```dotenv
+Database__Provider=MySql
+ConnectionStrings__ciko='Server=db.example.com;Port=3306;Database=relaxkon;User ID=relaxkon;Password=replace-me;Charset=utf8mb4'
+```
+
+如果需要邮件重置密码，设置 `PasswordReset__Enabled=true`，填写 SMTP 和前端 HTTPS 地址。需要开放邮箱验证注册时，同时设置 `Registration__Enabled=true`。SMTP 的 465 端口使用隐式 TLS，587 端口使用 STARTTLS，均保留 `PasswordReset__EnableSsl=true`。示例默认关闭邮件重置和公开注册，初始化时仍可以设置首个管理员的密码。
+
+```sh
+docker compose build server
+docker compose run --rm server --init-db
+docker compose up -d
+docker compose logs --tail=100 server
+```
+
+`--init-db` 仅用于空库。它会交互式询问管理员用户名、邮箱和密码。服务默认发布到宿主机的 `127.0.0.1:6000`，可通过 `RELAXKON_BIND` 和 `RELAXKON_PORT` 调整。生产环境可在宿主机上用反向代理提供 HTTPS。修改 `.env` 后运行 `docker compose up -d` 以应用配置。
+
+如果希望同一个容器同时提供网页，在构建镜像前按下方「部署前端」把 Angular 浏览器产物复制到 `wwwroot`。如果前端单独托管，请让前端站点将 API 请求转发到后端，以配合现有同源配置。
+
+常规重建和重启会保留数据卷。`docker compose down -v` 会删除该卷中的 SQLite 数据和密钥。
+
 ## 前置条件
 
 - .NET SDK 10（版本由 `global.json` 固定）。
@@ -119,37 +145,8 @@ src/RelaxKon.Auth/wwwroot
 
 详见 [API 使用](api.md)。
 
-## 2026-11-04 架构升级
-
-已有数据库在停止写入并备份后，运行一次 `src/RelaxKon.Auth/Resources/merge/architecture-upgrade.sql`；新库使用已包含这些表和触发器的 `merge/init.sql`。不要对已有库重跑完整初始化脚本。
-
-先检查重复客户端 ID：
-
-```sql
-SELECT UserId, DataId, COUNT(*) FROM ChatHistories GROUP BY UserId, DataId HAVING COUNT(*) > 1;
-SELECT ChatHistoryId, DataId, COUNT(*) FROM ChatMessages GROUP BY ChatHistoryId, DataId HAVING COUNT(*) > 1;
-```
-
-存在重复时先人工确定应保留的数据；唯一索引创建会拒绝重复，脚本不会删数据。迁移需要创建表、索引及触发器的权限，DDL 无法事务回滚。脚本中断时核对实际结构后继续，不能盲目整份重试。
-
-新增 `SyncAccounts`、`SyncChanges` 用于按账户提交排序的同步与幂等重试；`RoutingConfiguration` 及目录触发器用于多实例路由失效。旧后端写入不会维护同步日志，不能在新客户端已经建立游标后直接回滚旧应用。
-
-`AiRouting:RefreshIntervalSeconds` 默认 5，范围 1–60；`AiRouting:MaxStaleSeconds` 默认 30、最小 10。数据库无法确认配置超过阈值后，实例清空旧路由；失效检测还受轮询与超时影响，默认通常约 45 秒内停止使用旧配置处理新请求。已开始的流不受此开关终止。
-
-先发布后端，再发布前端。新前端要求显式完成事件；旧客户端仍可使用纯文本协商和旧同步入口。更新 PWA 资源并验证待同步提示、断网重试、账户切换、双实例停用密钥及完整数据库联调。首次同步的导入策略和日志容量限制见 [架构实施记录](architecture-review.md)。
-
-该升级已在 MySQL 8.4.13 的独立临时库中通过新库/旧库结构等价、数据保留、重复数据拒绝及 12 个路由触发器测试。证据、修复和适用边界见 [MySQL 验证记录](mysql-verification.md)；这不代表已经对业务数据库执行迁移。
-
 ## 启动前数据库检查
 
-后端会在路由首次加载前，只读核对架构升级所需的表、列、唯一索引、12 个路由触发器及版本种子行。若看到“数据库架构尚未升级”或 RoutingConfiguration 不存在，说明当前连接的数据库尚未完成上述迁移；不会通过自动建表或跳过校验来绕过问题。备份并核对实际状态后完成迁移，再启动服务。
+后端启动时只读检查当前版本所需的数据库结构。如果检查失败，请核对连接串及错误中列出的缺失项。首次部署使用空库初始化，已有库需使用与当前版本兼容的架构。
 
-当前开发环境的复现、备份、数据保留和启动验证见 [启动修复记录](startup-repair.md)。其他部署环境仍需分别确认，不能根据测试库通过推断其已经升级。
-
-## 注册邮箱验证
-
-公开注册新增必填 emailCode，复用现有 PasswordReset SMTP 配置；Registration.Enabled 默认为 true。已有数据库需要先执行一次 `registration-email-verification.sql`，再配套发布前后端。配置、响应和回归证据见 [注册邮箱验证](registration-email-verification.md)。
-
-### 独立路由权重升级（2026-11-05）
-
-已完成架构升级的库还需执行一次 `src/RelaxKon.Auth/Resources/merge/routing-weight-upgrade.sql`。刷新旧快捷添加示例使用可重复运行的 `model-catalog-refresh.sql`。不要在已有库重跑 init.sql；具体升级顺序、兼容行为见 [模型目录与路由权重](model-catalog-and-routing.md)。
+公开注册使用 SMTP 发送验证码，配置见 [注册邮箱验证](registration-email-verification.md)。

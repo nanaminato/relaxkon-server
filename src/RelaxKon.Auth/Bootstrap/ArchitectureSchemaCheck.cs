@@ -158,24 +158,8 @@ public static class ArchitectureSchemaCheck
             if (Convert.ToInt64(await seed.ExecuteScalarAsync(token)) != 1) missing.Add("RoutingConfiguration row Id=1");
         }
         if (missing.Count != 0)
-        {
-            var scripts = new List<string>();
-            if (missing.Contains("FeatureAccessTasks"))
-                scripts.Add("src/RelaxKon.Auth/Resources/merge/feature-access.sql");
-            else if (missing.Any(item => item.StartsWith("FeatureAccessTasks.", StringComparison.Ordinal)))
-                scripts.Add("src/RelaxKon.Auth/Resources/merge/apimart-task-route-upgrade.sql");
-            if (missing.Any(item => item.StartsWith("Roles.") || item.StartsWith("Roles unique") || item.StartsWith("AccountRoles unique")))
-                scripts.Add("src/RelaxKon.Auth/Resources/merge/role-system-upgrade.sql");
-            if (missing.Contains("ModelKeyBinds.RoutingWeight"))
-                scripts.Add("src/RelaxKon.Auth/Resources/merge/routing-weight-upgrade.sql");
-            if (missing.Any(item => item != "ModelKeyBinds.RoutingWeight" && !item.StartsWith("Roles") && !item.StartsWith("AccountRoles") && !item.StartsWith("FeatureAccessTasks", StringComparison.Ordinal) && !item.StartsWith("RegistrationEmailChallenges", StringComparison.Ordinal)))
-                scripts.Add("src/RelaxKon.Auth/Resources/merge/architecture-upgrade.sql");
-            if (missing.Any(item => item.StartsWith("RegistrationEmailChallenges", StringComparison.Ordinal)))
-                scripts.Add("src/RelaxKon.Auth/Resources/merge/registration-email-verification.sql");
             throw new InvalidOperationException("数据库架构尚未升级，缺少：" + string.Join(", ", missing) +
-                "。请停止写入并备份；已有库对照 " + string.Join("、", scripts) + " 完成迁移。" +
-                "部分升级的数据库需先核对实际结构，不能盲目整份重跑。空库请使用 merge/init.sql。详见 docs/deployment.md。启动不会自动修改数据库。");
-        }
+                "。请连接与当前版本兼容的数据库。首次部署请使用空库运行 --init-db。启动不会自动修改数据库。");
     }
 }
 
@@ -205,10 +189,7 @@ public sealed class DatabaseSchemaValidationService(IConfiguration configuration
         {
             await using var command = provider.Command(connection, null, tableExists, ("@table", table));
             if (Convert.ToInt64(await command.ExecuteScalarAsync(timeout.Token)) == 0)
-            {
-                var directory = provider.IsSqlite ? "sqlite" : "merge";
-                throw new InvalidOperationException($"数据库缺少 {table}。启用总并发限制前请执行 Resources/{directory}/feature-concurrency.sql。");
-            }
+                throw new InvalidOperationException($"数据库缺少 {table}，无法启用总并发限制。请连接与当前版本兼容的数据库。");
         }
     }
     public Task StopAsync(CancellationToken token) => Task.CompletedTask;

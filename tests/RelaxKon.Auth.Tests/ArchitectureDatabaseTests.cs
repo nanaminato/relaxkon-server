@@ -18,7 +18,7 @@ public class ArchitectureDatabaseTests
         var before = await database.Scalar<long>("SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE()");
         using var connection = database.Connection();
         var error = Assert.ThrowsAsync<InvalidOperationException>(() => RelaxKon.Auth.Bootstrap.ArchitectureSchemaCheck.Validate(connection.ConnectionString));
-        Assert.That(error!.Message, Does.Contain("RoutingConfiguration").And.Contain("architecture-upgrade.sql").And.Not.Contain("Password="));
+        Assert.That(error!.Message, Does.Contain("RoutingConfiguration").And.Contain("与当前版本兼容的数据库").And.Not.Contain("Password="));
         Assert.That(await database.Scalar<long>("SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE()"), Is.EqualTo(before));
         Assert.That(await database.Scalar<long>("SELECT COUNT(*) FROM ChatMessages"), Is.EqualTo(2));
         await database.Execute(MySqlTestDatabase.Resource("ArchitectureUpgrade.sql"));
