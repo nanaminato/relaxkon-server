@@ -1,6 +1,6 @@
 services:
   server:
-    build: .
+    image: ${RELAXKON_IMAGE:-ghcr.io/nanaminato/relaxkon-server:latest}
     env_file: .env
     ports:
       - "${RELAXKON_BIND:-127.0.0.1}:${RELAXKON_PORT:-6000}:6000"

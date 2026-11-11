@@ -15,6 +15,10 @@ on:
       - 'src/**'
   workflow_dispatch:
 
+concurrency:
+  group: deployment-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -23,6 +27,9 @@ jobs:
     name: Empty SQLite database (${{ matrix.mode }})
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
     strategy:
       fail-fast: false
       matrix:
@@ -42,6 +49,7 @@ jobs:
           port=6000
           if [[ "${{ matrix.mode }}" == compose ]]; then
             port=6080
+            echo 'RELAXKON_IMAGE=relaxkon-local:smoke' >> "$GITHUB_ENV"
             sed -i "s/^RELAXKON_PORT=.*/RELAXKON_PORT=$port/" .env
           fi
           printf 'SMOKE_ORIGIN=http://127.0.0.1:%s\n' "$port" >> "$GITHUB_ENV"
@@ -79,7 +87,9 @@ jobs:
       - name: Build, initialize, and start Docker Compose
         if: matrix.mode == 'compose'
         run: |
-          docker compose build server
+          docker build -t "$RELAXKON_IMAGE" \
+            --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+            --label "org.opencontainers.image.revision=$GITHUB_SHA" .
           printf 'admin\nadmin@example.com\n%s\n%s\n' "$SMOKE_PASSWORD" "$SMOKE_PASSWORD" |
             docker compose run --rm -T server --init-db
           docker compose up -d
@@ -139,6 +149,51 @@ jobs:
           npm install --prefix "$browser_tools" --no-audit --no-fund playwright@1.56.1
           "$browser_tools/node_modules/.bin/playwright" install --with-deps chromium
           NODE_PATH="$browser_tools/node_modules" node .github/scripts/deployment-browser-smoke.cjs
+
+      - name: Push verified image to GHCR and redeploy by digest
+        id: registry
+        if: matrix.mode == 'compose' && github.repository == 'nanaminato/relaxkon-server' && github.ref == 'refs/heads/master'
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          registry_image=ghcr.io/nanaminato/relaxkon-server
+          candidate="$registry_image:sha-$GITHUB_SHA"
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker tag "$RELAXKON_IMAGE" "$candidate"
+          push_log="$RUNNER_TEMP/ghcr-push.log"
+          docker push "$candidate" | tee "$push_log"
+          digest=$(awk '$2 == "digest:" {print $3}' "$push_log")
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+
+          docker compose down
+          echo "RELAXKON_IMAGE=$registry_image@$digest" >> "$GITHUB_ENV"
+          echo 'COMPOSE_PROJECT_NAME=relaxkon-registry' >> "$GITHUB_ENV"
+          echo 'published=true' >> "$GITHUB_OUTPUT"
+
+      - name: Verify the pulled image from a new SQLite volume
+        if: steps.registry.outputs.published == 'true'
+        run: |
+          docker compose pull server
+          printf 'admin\nadmin@example.com\n%s\n%s\n' "$SMOKE_PASSWORD" "$SMOKE_PASSWORD" |
+            docker compose run --rm -T server --init-db
+          docker compose up -d
+          curl --silent --show-error --retry 20 --retry-delay 1 --retry-all-errors --max-time 5 \
+            "$SMOKE_ORIGIN/api/role" -o /dev/null
+          NODE_PATH="$RUNNER_TEMP/deployment-browser/node_modules" node .github/scripts/deployment-browser-smoke.cjs
+
+      - name: Publish latest after registry deployment passes
+        if: steps.registry.outputs.published == 'true'
+        run: |
+          latest=ghcr.io/nanaminato/relaxkon-server:latest
+          docker tag "$RELAXKON_IMAGE" "$latest"
+          docker push "$latest"
+          printf 'Verified image: `%s`\n' "$RELAXKON_IMAGE" >> "$GITHUB_STEP_SUMMARY"
+          anonymous_config=$(mktemp -d)
+          if docker --config "$anonymous_config" pull "$latest"; then
+            echo 'Anonymous GHCR pull succeeded.' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'Anonymous GHCR pull unavailable. Sign in with an account that can read the package.' >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Show deployment logs on failure
         if: failure()

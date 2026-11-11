@@ -1,24 +1,24 @@
 # RelaxKon Docker Compose 部署指南
 
-适用于单机全新部署。ASP.NET Core 容器同时提供 Angular 网页和同源 API。需要 Docker Engine、Docker Compose、Git，以及构建前端用的 Node.js 24 和 npm。以下命令使用 Bash。
+适用于 Linux x86-64 单机部署。GHCR 镜像同时提供 Angular 网页和同源 API。部署机需要 Docker Engine、Docker Compose 和 Git。以下命令使用 Bash。
 
-## 1. 构建前端
-
-在同一个父目录克隆前后端仓库，然后从前端的生产构建目录复制浏览器产物。请使用相互兼容的前后端版本。
+## 1. 获取部署配置
 
 ```sh
 git clone https://github.com/nanaminato/relaxkon-server.git
-git clone https://github.com/nanaminato/relaxkon-web.git
-cd relaxkon-web
-npm ci
-npm run build -- --configuration production
-test -f dist/app/browser/index.html
-mkdir -p ../relaxkon-server/src/RelaxKon.Auth/wwwroot
-cp -R dist/app/browser/. ../relaxkon-server/src/RelaxKon.Auth/wwwroot/
-cd ../relaxkon-server
+cd relaxkon-server
 ```
 
-只部署 API 时，可以直接进入后端仓库，跳过前端构建。
+Compose 默认使用 `ghcr.io/nanaminato/relaxkon-server:latest`。可在 `.env` 中设置 `RELAXKON_IMAGE`，指定发布标签或 `ghcr.io/nanaminato/relaxkon-server@sha256:…` 来固定版本。
+
+GHCR 公共镜像支持匿名拉取。若镜像包处于私有状态，先使用对该包有读取权限的 GitHub 账号和带 `read:packages` 权限的 classic PAT 登录，再执行下方的拉取命令。
+
+```sh
+read -rsp 'GHCR token: ' ghcr_token
+printf '\n'
+printf '%s' "$ghcr_token" | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password-stdin
+unset ghcr_token
+```
 
 ## 2. 配置数据库、JWT 和邮箱
 
@@ -47,7 +47,7 @@ ConnectionStrings__ciko='Server=db.example.com;Port=3306;Database=relaxkon;User 
 ## 3. 初始化并启动
 
 ```sh
-docker compose build server
+docker compose pull server
 docker compose run --rm server --init-db
 docker compose up -d
 docker compose ps
@@ -66,9 +66,24 @@ docker compose logs --tail=100 server
 2. 在浏览器打开 `/accounts/sign-in`，输入刚创建的管理员用户名、密码和页面显示的验证码。登录后打开 `/admin/accounts/account-management`，确认列表中显示该管理员。随后添加供应商密钥、模型和关联，发送一条聊天消息并确认回复逐步显示。配置接口见 [API 使用](api.md)。
 3. 如启用了 SMTP，验证密码重置邮件能送达，链接指向实际 HTTPS 域名。若同时开放了注册，再验证邮箱验证码。
 
-仓库的 [部署验收工作流](../.github/workflows/deployment-smoke.yml) 使用固定的前端提交构建一体镜像，从空 SQLite 库初始化，再用 Chromium 验证管理员登录和账户管理页面。
+仓库的 [部署验收工作流](../.github/workflows/deployment-smoke.yml) 使用固定的前端提交构建一体镜像。镜像通过空库和 Chromium 登录验收后推送至 GHCR，再按摘要拉取到另一个全新 SQLite 卷复验。复验通过后更新 `latest`。
 
 常规重建和重启会保留命名卷。备份时应包含 SQLite 数据库和 Data Protection 密钥。使用外部 MySQL 时也需要单独备份 MySQL 数据。`docker compose down -v` 会删除 Compose 命名卷。
+
+## 从源码构建镜像
+
+如需构建自定义镜像，在后端仓库旁克隆 `relaxkon-web`，选择兼容的前端版本，然后用 Node.js 24 和 npm 构建。以下命令在后端仓库根目录执行。
+
+```sh
+npm ci --prefix ../relaxkon-web
+npm run build --prefix ../relaxkon-web -- --configuration production
+test -f ../relaxkon-web/dist/app/browser/index.html
+mkdir -p src/RelaxKon.Auth/wwwroot
+cp -R ../relaxkon-web/dist/app/browser/. src/RelaxKon.Auth/wwwroot/
+docker build -t relaxkon-local:custom .
+```
+
+在 `.env` 中设置 `RELAXKON_IMAGE=relaxkon-local:custom`，跳过拉取步骤，再执行初始化和启动命令。
 
 ## 非容器部署（终端初始化，再由 systemd 启动）
 
