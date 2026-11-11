@@ -4,24 +4,26 @@ const { chromium } = require('playwright');
 async function verifyAdministratorLogin() {
   const browser = await chromium.launch();
   try {
-    const origin = 'http://127.0.0.1:6000';
+    const origin = process.env.SMOKE_ORIGIN;
     const page = await browser.newPage();
     page.setDefaultTimeout(20_000);
 
-    const challenge = page.waitForResponse(response =>
-      response.url() === origin + '/api/verification/generate');
-    await page.goto(origin + '/accounts/sign-in');
-    const challengeResponse = await challenge;
+    const [challengeResponse] = await Promise.all([
+      page.waitForResponse(response => response.url() === origin + '/api/verification/generate'),
+      page.goto(origin + '/accounts/sign-in'),
+    ]);
     assert.equal(challengeResponse.status(), 200, 'The sign-in page must load its verification challenge');
     const { code } = await challengeResponse.json();
 
     await page.locator('#login-username').fill('admin');
     await page.locator('#login-password').fill(process.env.SMOKE_PASSWORD);
     await page.locator('#login-captcha').fill(code);
-    const login = page.waitForResponse(response =>
-      response.url() === origin + '/api/auth/login' && response.request().method() === 'POST');
-    await page.locator('form button[type=submit]').click();
-    assert.equal((await login).status(), 200, 'The administrator sign-in request must succeed');
+    const [loginResponse] = await Promise.all([
+      page.waitForResponse(response =>
+        response.url() === origin + '/api/auth/login' && response.request().method() === 'POST'),
+      page.locator('form button[type=submit]').click(),
+    ]);
+    assert.equal(loginResponse.status(), 200, 'The administrator sign-in request must succeed');
 
     await page.waitForURL(url => url.pathname !== '/accounts/sign-in');
     await page.goto(origin + '/admin/accounts/account-management');
