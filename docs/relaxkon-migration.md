@@ -8,7 +8,7 @@
 
 - 后续项目迁移将解决方案、项目目录、命名空间、嵌入资源名和程序集切换到 `RelaxKon.*`。构建入口为 `RelaxKon.AI.Server.sln`，部署入口为 `RelaxKon.Auth.dll`。
 - `ConnectionStrings:ciko`、已有数据库名称、表、主键、账户、角色编码、聊天历史与任务记录保留。本次改名无需 SQL，不运行 `init.sql`、`--init-db`、`--create-admin` 或已有一次性升级脚本。
-- 保留部署中现有 JWT issuer、audience、SecretKey、RefreshTokenPepper、会话与缓存前缀。示例中的 `turbo-ai-server` 和 `turbo-ai-client` 是认证协议标识，不是遗漏的品牌文本。不能因仓库改名替换，否则旧 token 无法验证。
+- 保留部署中现有 JWT issuer、audience、SecretKey、RefreshTokenPepper、会话与缓存前缀。原部署可能使用 `turbo-ai-server` 和 `turbo-ai-client` 作为认证标识。全新部署示例使用 `relaxkon-server` 和 `relaxkon-web`。已有实例须沿用实际配置，否则旧 token 可能无法验证。
 - 保留 Data Protection 应用名 `Turbo.Auth`、密钥环及 `DataProtection:KeyPath`。密码重置、注册验证码和任务恢复回执依赖该身份；只改目录名或重建密钥会破坏未到期凭据。
 - 保留 `/api/*` 路由、请求响应字段、流式协议、原 API 域名、前端生产 `apiUrl: '/'`、`wwwroot` 部署目录和默认开发端口 5111。GitHub 改名不会自动改应用域名。
 - 前端仍需保留 IndexedDB/localStorage/设备身份等持久化键，不能因品牌改名清空或搬迁用户数据。

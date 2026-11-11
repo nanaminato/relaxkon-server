@@ -2,29 +2,7 @@
 
 ## Docker Compose 首次部署
 
-在仓库根目录将 `.env.example` 复制为 `.env`，分别填入两个独立的随机值作为 `Jwt__SecretKey` 和 `Jwt__RefreshTokenPepper`，例如分别运行两次 `openssl rand -hex 32`。数据库、Redis 和 SMTP 凭据均通过该文件传入容器。连接串或密码含有 `$` 时使用单引号包裹，避免 Compose 展开变量。
-
-默认使用 SQLite，数据库和 ASP.NET Core Data Protection 密钥保存在同一个 Docker 命名卷。使用 MySQL 时，先在容器可访问的 MySQL 8.4 服务中创建空数据库，并赋予初始化账号建表、建索引和建触发器所需权限。随后修改 `.env`：
-
-```dotenv
-Database__Provider=MySql
-ConnectionStrings__ciko='Server=db.example.com;Port=3306;Database=relaxkon;User ID=relaxkon;Password=replace-me;Charset=utf8mb4'
-```
-
-如果需要邮件重置密码，设置 `PasswordReset__Enabled=true`，填写 SMTP 和前端 HTTPS 地址。需要开放邮箱验证注册时，同时设置 `Registration__Enabled=true`。SMTP 的 465 端口使用隐式 TLS，587 端口使用 STARTTLS，均保留 `PasswordReset__EnableSsl=true`。示例默认关闭邮件重置和公开注册，初始化时仍可以设置首个管理员的密码。
-
-```sh
-docker compose build server
-docker compose run --rm server --init-db
-docker compose up -d
-docker compose logs --tail=100 server
-```
-
-`--init-db` 仅用于空库。它会交互式询问管理员用户名、邮箱和密码。服务默认发布到宿主机的 `127.0.0.1:6000`，可通过 `RELAXKON_BIND` 和 `RELAXKON_PORT` 调整。生产环境可在宿主机上用反向代理提供 HTTPS。修改 `.env` 后运行 `docker compose up -d` 以应用配置。
-
-如果希望同一个容器同时提供网页，在构建镜像前按下方「部署前端」把 Angular 浏览器产物复制到 `wwwroot`。如果前端单独托管，请让前端站点将 API 请求转发到后端，以配合现有同源配置。
-
-常规重建和重启会保留数据卷。`docker compose down -v` 会删除该卷中的 SQLite 数据和密钥。
+请按 [Docker Compose 完整部署指南（简体中文）](deployment.zh-CN.md) 构建前端、配置数据库与 SMTP、初始化管理员并验证服务。
 
 ## 前置条件
 
@@ -34,7 +12,7 @@ docker compose logs --tail=100 server
 
 ## 选择数据库
 
-`Database:Provider` 可为 `MySql` 或 `Sqlite`，默认 `MySql`。`ConnectionStrings:ciko` 对应所选数据库。SQLite 使用独立完整初始化和预检，见 [SQLite 首次部署与限制](database-providers.md)。下节 SQL 客户端初始化及已有升级脚本仅适用于 MySQL。
+`Database:Provider` 可为 `MySql` 或 `Sqlite`，默认 `MySql`。`ConnectionStrings:ciko` 对应所选数据库。SQLite 使用独立完整初始化和预检，见 [SQLite 首次部署与限制](database-providers.md)。下节 SQL 客户端初始化仅适用于 MySQL。
 
 ## MySQL 数据库初始化
 
@@ -59,7 +37,7 @@ export PasswordReset__EnableSsl=true
 export PasswordReset__FromAddress='no-reply@example.com'
 export PasswordReset__SmtpUsername='no-reply@example.com'
 export PasswordReset__SmtpPassword='your-smtp-authorization-code'
-export DataProtection__KeyPath='/var/lib/turbo-ai/keys'
+export DataProtection__KeyPath='/var/lib/relaxkon/keys'
 ```
 
 ### 实际发件账号如何配置
@@ -96,10 +74,10 @@ SMTP 使用 MailKit：`EnableSsl=true` 时，465 使用隐式 TLS，其他端口
 以 `src/RelaxKon.Auth/appsettings.example.json` 为模板创建环境专用配置。不要提交该文件或真实凭据。生产环境推荐使用环境变量或密钥存储：
 
 ```bash
-export ConnectionStrings__ciko='server=db;port=3306;database=turboai;user=turboai;password=replace-me;Charset=utf8mb4'
+export ConnectionStrings__ciko='server=db;port=3306;database=relaxkon;user=relaxkon;password=replace-me;Charset=utf8mb4'
 export ConnectionStrings__Redis='redis:6379'
-export Jwt__Issuer='turbo-ai-server'
-export Jwt__Audience='turbo-ai-client'
+export Jwt__Issuer='relaxkon-server'
+export Jwt__Audience='relaxkon-web'
 export Jwt__SecretKey='a-long-random-secret'
 export Jwt__RefreshTokenPepper='a-separate-long-random-secret'
 export Cors__AllowedOrigins__0='https://app.example.com'
