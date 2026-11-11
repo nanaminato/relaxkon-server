@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const { chromium } = require('playwright');
 
 async function verifyAdministratorLogin() {
-  const browser = await chromium.launch();
+  const browser = await chromium.launch({ channel: 'chrome' });
   try {
     const origin = process.env.SMOKE_ORIGIN;
     const page = await browser.newPage();

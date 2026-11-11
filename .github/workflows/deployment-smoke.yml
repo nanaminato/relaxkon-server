@@ -144,10 +144,10 @@ jobs:
 
       - name: Verify browser sign-in and account management
         if: matrix.mode == 'compose'
+        timeout-minutes: 3
         run: |
           browser_tools="$RUNNER_TEMP/deployment-browser"
           npm install --prefix "$browser_tools" --no-audit --no-fund playwright@1.56.1
-          "$browser_tools/node_modules/.bin/playwright" install --with-deps chromium
           NODE_PATH="$browser_tools/node_modules" node .github/scripts/deployment-browser-smoke.cjs
 
       - name: Push verified image to GHCR and redeploy by digest
