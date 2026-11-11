@@ -5,6 +5,7 @@ on:
     branches: [master]
     paths:
       - '.github/workflows/deployment-smoke.yml'
+      - '.github/scripts/deployment-browser-smoke.cjs'
       - 'Dockerfile'
       - '.dockerignore'
       - '.env.example'
@@ -46,6 +47,28 @@ jobs:
             echo "::add-mask::$value"
             sed -i "s/^$name=.*/$name=$value/" .env
           done
+
+      - uses: actions/checkout@v4
+        if: matrix.mode == 'compose'
+        with:
+          repository: nanaminato/relaxkon-web
+          ref: 9fc2af592ef65bdba1e28a7b68bce6bbf9ab5a23
+          path: frontend
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        if: matrix.mode == 'compose'
+        with:
+          node-version: '24'
+
+      - name: Build and stage the Angular application
+        if: matrix.mode == 'compose'
+        run: |
+          npm ci --prefix frontend
+          npm run build --prefix frontend -- --configuration production
+          test -f frontend/dist/app/browser/index.html
+          mkdir -p src/RelaxKon.Auth/wwwroot
+          cp -R frontend/dist/app/browser/. src/RelaxKon.Auth/wwwroot/
 
       - name: Build, initialize, and start Docker Compose
         if: matrix.mode == 'compose'
@@ -102,6 +125,14 @@ jobs:
           echo "::add-mask::$token"
           curl --silent --show-error --fail -H "Authorization: Bearer $token" "$base/api/role" |
             jq -e 'any(.[]; .code == "admin")' >/dev/null
+
+      - name: Verify browser sign-in and account management
+        if: matrix.mode == 'compose'
+        run: |
+          browser_tools="$RUNNER_TEMP/deployment-browser"
+          npm install --prefix "$browser_tools" --no-audit --no-fund playwright@1.56.1
+          "$browser_tools/node_modules/.bin/playwright" install --with-deps chromium
+          NODE_PATH="$browser_tools/node_modules" node .github/scripts/deployment-browser-smoke.cjs
 
       - name: Show deployment logs on failure
         if: failure()

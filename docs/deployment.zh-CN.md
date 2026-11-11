@@ -63,8 +63,10 @@ docker compose logs --tail=100 server
 后端默认绑定到宿主机的 `127.0.0.1:6000`。生产部署时，让宿主机反向代理为前端域名终止 TLS，并将该域名的请求转发到 `http://127.0.0.1:6000`。代理应关闭流式接口的响应缓冲，保留应用发送数据的时机。如需识别真实客户端 IP，按实际代理地址配置 `ForwardedHeaders__KnownProxies__0`，并让代理传递转发头。
 
 1. 在宿主机执行 `curl -fsS http://127.0.0.1:6000/ -o /dev/null` 检查一体部署的首页。随后通过公开 HTTPS 域名打开页面，刷新一个应用内的深层路由。
-2. 使用刚创建的管理员账户登录，添加供应商密钥、模型和关联，发送一条聊天消息并确认回复逐步显示。配置接口见 [API 使用](api.md)。
+2. 在浏览器打开 `/accounts/sign-in`，输入刚创建的管理员用户名、密码和页面显示的验证码。登录后打开 `/admin/accounts/account-management`，确认列表中显示该管理员。随后添加供应商密钥、模型和关联，发送一条聊天消息并确认回复逐步显示。配置接口见 [API 使用](api.md)。
 3. 如启用了 SMTP，验证密码重置邮件能送达，链接指向实际 HTTPS 域名。若同时开放了注册，再验证邮箱验证码。
+
+仓库的 [部署验收工作流](../.github/workflows/deployment-smoke.yml) 使用固定的前端提交构建一体镜像，从空 SQLite 库初始化，再用 Chromium 验证管理员登录和账户管理页面。
 
 常规重建和重启会保留命名卷。备份时应包含 SQLite 数据库和 Data Protection 密钥。使用外部 MySQL 时也需要单独备份 MySQL 数据。`docker compose down -v` 会删除 Compose 命名卷。
 
