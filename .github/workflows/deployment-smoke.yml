@@ -38,7 +38,7 @@ jobs:
         run: |
           umask 077
           cp .env.example .env
-          password=$(openssl rand -hex 24)
+          password=$(openssl rand -hex 10)
           echo "::add-mask::$password"
           printf 'SMOKE_PASSWORD=%s\n' "$password" >> "$GITHUB_ENV"
           for name in Jwt__SecretKey Jwt__RefreshTokenPepper; do

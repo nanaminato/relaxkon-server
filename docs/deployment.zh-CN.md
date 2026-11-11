@@ -54,7 +54,7 @@ docker compose ps
 docker compose logs --tail=100 server
 ```
 
-`--init-db` 只用于空库，会交互式要求填写首个管理员的用户名、邮箱和密码。已有兼容数据库可以直接启动。修改 `.env` 后运行 `docker compose up -d`，重新创建容器以加载配置。
+`--init-db` 只用于空库，会交互式要求填写首个管理员的用户名、邮箱和密码。管理员密码须为 6–20 个字符，密码提示处直接回车可自动生成。已有兼容数据库可以直接启动。修改 `.env` 后运行 `docker compose up -d`，重新创建容器以加载配置。
 
 ## 4. 配置 HTTPS 并验收
 
@@ -72,7 +72,7 @@ docker compose logs --tail=100 server
 
 使用 SQLite 时，设置 `Database__Provider=Sqlite`，连接串使用绝对路径，例如 `ConnectionStrings__ciko='Data Source=/var/lib/relaxkon/relaxkon.db'`。确保服务账号可以写入数据库目录和 `DataProtection__KeyPath` 指定的密钥目录。
 
-1. 在终端用服务账号执行一次空库初始化，按提示创建首个管理员。成功后命令会自行退出。
+1. 在终端用服务账号执行一次空库初始化，按提示创建首个管理员。密码须为 6–20 个字符，也可以直接回车自动生成。成功后命令会自行退出。
 
    ```sh
    sudo -u relaxkon bash -c 'cd /opt/relaxkon && set -a && . /etc/relaxkon/server.env && exec /usr/bin/dotnet RelaxKon.Auth.dll --init-db'
