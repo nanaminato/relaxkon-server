@@ -55,7 +55,7 @@ public class KeyRepository: IKeyRepository
             _keyContext.SupplierKeys!.Add(key);
             await _keyContext.SaveChangesAsync();
         }
-        catch (Exception e)
+        catch (Exception)
         {
             throw new EntityNotFoundException();
         }
@@ -102,7 +102,7 @@ public class KeyRepository: IKeyRepository
 
             await _keyContext.SaveChangesAsync();
         }
-        catch (Exception e)
+        catch (Exception)
         {
             throw new EntityNotFoundException();
         }

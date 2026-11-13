@@ -88,27 +88,15 @@ public partial class AuthContext : DbContext
     }
 
     partial void OnModelCreatingPartial(ModelBuilder modelBuilder);
-    public DbSet<Account>? Accounts
-    {
-        get;
-        set;
-    }
+    public DbSet<Account> Accounts { get; set; } = null!;
 
-    public DbSet<AccountRole>? AccountRoles
-    {
-        get;
-        set;
-    }
+    public DbSet<AccountRole> AccountRoles { get; set; } = null!;
     public DbSet<RefreshToken>? RefreshTokens
     {
         get;
         set;
     }
-    public DbSet<Role>? Roles
-    {
-        get;
-        set;
-    }
+    public DbSet<Role> Roles { get; set; } = null!;
     public DbSet<ChatHistory>? ChatHistories
     {
         get;
