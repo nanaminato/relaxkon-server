@@ -3,6 +3,8 @@ using RelaxKon.Auth.Data;
 
 namespace RelaxKon.Auth.Security.AuthSecurity;
 
+public sealed class AuthSecurityUnavailableException : Exception;
+
 public sealed record AuthSecurityDocument(AuthSecuritySettings Settings, List<SecurityEvent> Audit);
 // A second singleton document in the existing policy table avoids a new schema/table.
 public sealed class AuthSecurityStore(IConfiguration configuration, AuthSecurityState state)
@@ -13,7 +15,8 @@ public sealed class AuthSecurityStore(IConfiguration configuration, AuthSecurity
     public async Task<AuthSecuritySettings> Read(CancellationToken token)
     {
         if (Volatile.Read(ref document) is { } current) return current.Settings;
-        await gate.WaitAsync(token);
+        // Cold/unavailable configuration must not queue an unbounded number of anonymous requests.
+        if (!await gate.WaitAsync(0, token)) throw new AuthSecurityUnavailableException();
         try
         {
             if (document is not null) return document.Settings;
