@@ -40,3 +40,5 @@ dotnet run --project src/RelaxKon.Auth/RelaxKon.Auth.csproj --launch-profile htt
 使用 `http` 启动配置进行本地开发时，服务监听 `http://localhost:5111`；开发环境可通过 `/swagger` 查看由控制器生成的接口定义。示例 Kestrel 配置在未使用启动配置的部署场景监听 `http://0.0.0.0:6000`。
 
 首次启动后，使用管理员接口配置供应商密钥、模型以及密钥与模型的关联；已启用的关联会在启动时加载到内存密钥池。详见 [部署与配置](docs/deployment.md) 和 [API 使用](docs/api.md)。
+
+- [认证安全与登录防爆破](docs/authentication-security.md)：单实例内存计数、后台实时配置、MySQL/SQLite 持久化与部署注意事项。

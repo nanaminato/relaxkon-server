@@ -22,7 +22,7 @@ public static class FeatureUsageProjection
     {
         var byFeature = counters.ToDictionary(counter => counter.Key, StringComparer.Ordinal);
         var roleCodes = roles.ToArray();
-        var features = FeaturePolicies.Keys.Select(key =>
+        var features = FeaturePolicies.QuotaKeys.Select(key =>
         {
             var policy = FeaturePolicies.Resolve(document, key, roleCodes);
             byFeature.TryGetValue(key, out var counter);

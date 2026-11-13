@@ -64,6 +64,18 @@ public class PasswordResetTests
     }
 
     [Test]
+    public async Task Concurrent_requests_use_atomic_bounded_recipient_admission()
+    {
+        using var state = new RelaxKon.Auth.Security.AuthSecurity.AuthSecurityState(TimeProvider.System);
+        var service = new PasswordResetService(_store, _tokens, _sender,
+            new MemoryDistributedCache(OptionsFactory.Create(new MemoryDistributedCacheOptions())),
+            OptionsFactory.Create(new PasswordResetOptions { Enabled = true, PublicBaseUrl = "https://app.example.com" }),
+            NullLogger<PasswordResetService>.Instance, state);
+        await Task.WhenAll(Enumerable.Range(0, 30).Select(_ => Task.Run(() => service.RequestAsync("admin", "admin@example.com", default))));
+        Assert.That(_sender.Sent, Is.EqualTo(1));
+    }
+
+    [Test]
     public async Task Delivery_failure_does_not_reveal_account_existence()
     {
         _sender.Fail = true;

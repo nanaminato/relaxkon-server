@@ -28,15 +28,15 @@ public class FeatureAccessTests
         var document = FeaturePolicies.Empty;
         var roles = document.Features[0].Roles;
         roles["user"] = new(false, RequestsPerDay: limit);
-        Assert.That(FeaturePolicies.IsValid(document, new HashSet<string> { "user" }), Is.False);
+        Assert.That(FeaturePolicies.IsValid(document, new HashSet<string> { "user", "admin" }), Is.False);
         roles["user"] = new(false, MaxConcurrent: limit);
-        Assert.That(FeaturePolicies.IsValid(document, new HashSet<string> { "user" }), Is.False);
+        Assert.That(FeaturePolicies.IsValid(document, new HashSet<string> { "user", "admin" }), Is.False);
     }
 
     [Test]
     public void Rejects_duplicate_features_case_colliding_roles_and_null_grants()
     {
-        var roleNames = new HashSet<string> { "user", "USER" };
+        var roleNames = new HashSet<string> { "user", "USER", "admin" };
         var document = FeaturePolicies.Empty;
         document.Features[1] = document.Features[0];
         Assert.That(FeaturePolicies.IsValid(document, roleNames), Is.False);
@@ -54,8 +54,10 @@ public class FeatureAccessTests
     {
         var document = FeaturePolicies.Empty;
         document.Features[0].Roles.Add("user", new(true, int.MaxValue, null, int.MaxValue));
-        Assert.That(FeaturePolicies.IsValid(document, new HashSet<string> { "user" }), Is.True);
-        Assert.That(FeaturePolicies.Empty.Features.All(feature => feature.Roles.Count == 0), Is.True);
+        Assert.That(FeaturePolicies.IsValid(document, new HashSet<string> { "user", "admin" }), Is.True);
+        Assert.That(FeaturePolicies.Empty.Features.Where(feature => feature.Key != "auth-security-management").All(feature => feature.Roles.Count == 0), Is.True);
+        Assert.That(FeaturePolicies.Resolve(FeaturePolicies.Empty, "auth-security-management", ["admin"]).Enabled, Is.True);
+        Assert.That(FeaturePolicies.Resolve(FeaturePolicies.Empty, "auth-security-management", ["user"]).Enabled, Is.False);
     }
 
     [Test]
@@ -124,14 +126,14 @@ public class FeatureAccessTests
     {
         var document = FeaturePolicies.Empty;
         document.Features[0].Roles.Add("user", new(true, limit));
-        Assert.That(FeaturePolicies.IsValid(document, new HashSet<string> { "user" }), Is.False);
+        Assert.That(FeaturePolicies.IsValid(document, new HashSet<string> { "user", "admin" }), Is.False);
     }
     [Test]
     public void Rejects_unknown_features_and_roles()
     {
         var document = FeaturePolicies.Empty;
         document.Features[0].Roles.Add("unknown", new(true));
-        Assert.That(FeaturePolicies.IsValid(document, new HashSet<string> { "user" }), Is.False);
+        Assert.That(FeaturePolicies.IsValid(document, new HashSet<string> { "user", "admin" }), Is.False);
         Assert.That(FeaturePolicies.IsValid(document with { Features = [] }, new HashSet<string>()), Is.False);
     }
     [TestCase("127.0.0.1", false)]

@@ -1,3 +1,4 @@
+using RelaxKon.Auth.Security.AuthSecurity;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Caching.Distributed;
@@ -13,16 +14,27 @@ public interface IPasswordResetService
 
 public sealed class PasswordResetService(IPasswordResetStore store, ResetTokenService tokens,
     IPasswordResetEmailSender sender, IDistributedCache cache, IOptions<PasswordResetOptions> options,
-    ILogger<PasswordResetService> logger) : IPasswordResetService
+    ILogger<PasswordResetService> logger, AuthSecurityState? securityState = null, AuthSecurityStore? securityStore = null) : IPasswordResetService
 {
     public async Task RequestAsync(string username, string email, CancellationToken cancellationToken)
     {
         // The same cooldown and response apply to unknown accounts.
         var key = "auth:reset-cooldown:" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
             username.Trim().ToLowerInvariant() + "\n" + email.Trim().ToLowerInvariant())));
-        if (await cache.GetStringAsync(key, cancellationToken) is not null) return;
-        await cache.SetStringAsync(key, "1", new DistributedCacheEntryOptions
-            { AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(1) }, cancellationToken);
+        if (securityState is not null)
+        {
+            // A single atomic, bounded in-memory admission prevents concurrent duplicate mail.
+            // This recipient cooldown is independent of whether login throttling is enabled.
+            var settings = securityStore is null ? new AuthSecuritySettings() : await securityStore.Read(cancellationToken);
+            if (securityState.Request("reset-recipient", key, 1, 60, settings) > 0) return;
+        }
+        else
+        {
+            // Compatibility for direct construction; production DI always supplies securityState.
+            if (await cache.GetStringAsync(key, cancellationToken) is not null) return;
+            await cache.SetStringAsync(key, "1", new DistributedCacheEntryOptions
+                { AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(1) }, cancellationToken);
+        }
         var account = await store.FindAsync(username.Trim(), email.Trim(), cancellationToken);
         if (account is null) return;
         var link = options.Value.PublicBaseUrl.TrimEnd('/') + "/accounts/forgot-me-password#token=" + Uri.EscapeDataString(tokens.Create(account));

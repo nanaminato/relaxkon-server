@@ -9,10 +9,9 @@ using RelaxKon.Auth.Security.PasswordReset;
 
 namespace RelaxKon.Auth.Controllers.Auth;
 
-[ApiController]
+[ApiController, RequestSizeLimit(16384)]
 [AllowAnonymous]
 [Route("api/auth/password-reset")]
-[EnableRateLimiting("password-reset")]
 public sealed class PasswordResetController(IPasswordResetService service, IOptions<PasswordResetOptions> options) : ControllerBase
 {
     [HttpPost("request")]

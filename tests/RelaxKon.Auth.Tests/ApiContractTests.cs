@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Configuration;
 using Microsoft.AspNetCore.RateLimiting;
 using RelaxKon.Auth.Security.Registration;
 using System.Net;
@@ -42,6 +43,9 @@ public class ApiContractTests
     public async Task Start()
     {
         var builder = WebApplication.CreateBuilder();
+        // Contract fixtures never depend on checked-in or developer connection credentials.
+        builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+        { ["ConnectionStrings:ciko"] = "Server=127.0.0.1;Database=unused_contract_fixture;User ID=unused;Password=unused" });
         builder.Logging.ClearProviders();
         builder.WebHost.UseUrls("http://127.0.0.1:0");
         builder.Services.AddControllers().AddApplicationPart(typeof(ChatController).Assembly).AddNewtonsoftJson();
