@@ -1,6 +1,7 @@
 using RelaxKon.Auth.Security.AuthSecurity;
 using RelaxKon.Auth.Data;
 using RelaxKon.Auth.Application.Media;
+using RelaxKon.Auth.Application.Analytics;
 using RelaxKon.Auth.Security.Registration;
 using RelaxKon.Auth.Security.FeatureAccess;
 using System.Threading.RateLimiting;
@@ -149,6 +150,8 @@ builder.Services.AddScoped<IPasswordResetStore, PasswordResetStore>();
 builder.Services.AddScoped<IPasswordResetEmailSender, PasswordResetEmailSender>();
 builder.Services.AddScoped<IPasswordResetService, PasswordResetService>();
 builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<OperationsAnalytics>();
+builder.Services.AddHostedService(services => services.GetRequiredService<OperationsAnalytics>());
 builder.Services.AddSingleton<AuthSecurityState>();
 builder.Services.AddSingleton<AuthSecurityStore>();
 builder.Services.AddSignalR();
@@ -354,6 +357,7 @@ if (app.Environment.IsDevelopment())
 }
 app.UseStaticFiles();
 app.UseRouting();
+app.UseMiddleware<OperationsAnalyticsMiddleware>();
 app.UseMiddleware<AuthSecurityMiddleware>();
 app.UseAuthentication();
 app.UseAuthorization();

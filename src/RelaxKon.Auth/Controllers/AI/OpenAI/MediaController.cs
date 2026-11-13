@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using RelaxKon.Auth.Application.Media;
+using RelaxKon.Auth.Application.Analytics;
 using RelaxKon.Auth.Contracts.Media;
 using RelaxKon.Auth.Security.FeatureAccess;
 
@@ -10,17 +11,30 @@ namespace RelaxKon.Auth.Controllers.AI.OpenAI;
 public sealed class MediaController(IMediaService media) : ControllerBase
 {
     [FeatureAccess("tts"), HttpPost("tts")]
-    public async Task<ActionResult<SpeechResponse>> TTS(SpeechRequest request, CancellationToken token) => Ok(await media.Speech(request, token));
+    public async Task<ActionResult<SpeechResponse>> TTS(SpeechRequest request, CancellationToken token)
+    {
+        OperationsAnalyticsMiddleware.SetModel(HttpContext, request.Model);
+        return Ok(await media.Speech(request, token));
+    }
     [FeatureAccess("translation"), HttpPost("whisper-translate")]
-    public async Task<ActionResult<AudioTextResponse>> WhisperTranslate(AudioTranslationRequest request, CancellationToken token) => Ok(await media.Translate(request, token));
+    public async Task<ActionResult<AudioTextResponse>> WhisperTranslate(AudioTranslationRequest request, CancellationToken token)
+    {
+        OperationsAnalyticsMiddleware.SetModel(HttpContext, request.Model);
+        return Ok(await media.Translate(request, token));
+    }
     [FeatureAccess("transcription"), HttpPost("whisper-transcription")]
-    public async Task<ActionResult<AudioTextResponse>> WhisperTranscription(AudioTranscriptionRequest request, CancellationToken token) => Ok(await media.Transcribe(request, token));
+    public async Task<ActionResult<AudioTextResponse>> WhisperTranscription(AudioTranscriptionRequest request, CancellationToken token)
+    {
+        OperationsAnalyticsMiddleware.SetModel(HttpContext, request.Model);
+        return Ok(await media.Transcribe(request, token));
+    }
     [HttpPost("dall-e"), ProducesResponseType(StatusCodes.Status410Gone)]
     public ActionResult<ImageGenerationResponse> Dall_E() => StatusCode(410, new ProblemDetails { Status = 410, Title = "This image model is no longer supported", Extensions = { ["code"] = "image_model_removed" } });
     [FeatureAccess("image"), HttpPost("gpt-image")]
     public async Task<ActionResult<ImageGenerationResponse>> Gpt_image(ImageGenerationRequest request, CancellationToken token) => await Generate(request, false, token);
     private async Task<ActionResult<ImageGenerationResponse>> Generate(ImageGenerationRequest request, bool dalle, CancellationToken token)
     {
+        OperationsAnalyticsMiddleware.SetModel(HttpContext, request.Model);
         try { return Ok(await media.Image(request, dalle, token)); }
         catch (KeyNotFoundException)
         {

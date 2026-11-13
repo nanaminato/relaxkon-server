@@ -1,4 +1,5 @@
 using RelaxKon.Auth.Application.Media;
+using RelaxKon.Auth.Application.Analytics;
 using RelaxKon.Auth.Security.FeatureAccess;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -18,6 +19,7 @@ public class APIMartGPTImageController(APIMartImageService? images=null) : Contr
     [FeatureAccess("image"),HttpPost("gpt-image"),RequestSizeLimit(32*1024*1024)]
     public async Task<ActionResult<APIMartGenerationResponse>> Generate(APIMartImageGenerationRequest request,CancellationToken token)
     {
+        OperationsAnalyticsMiddleware.SetModel(HttpContext, request.Model);
         var account=FeatureIdentity.AccountId(User);if(account is null)return Unauthorized();
         try{return Ok(await images!.Generate(account.Value,request,token));}
         catch(ImageRequestException error){return BadRequest(new {code="invalid_image_option",field=error.Field});}

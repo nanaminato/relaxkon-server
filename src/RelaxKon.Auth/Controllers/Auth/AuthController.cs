@@ -60,7 +60,14 @@ public class AuthController : Controller
         {
             // Resolve the database's own collation first: spelling aliases must share one failure budget.
             // Both database lookup and password work are bounded by the global concurrent-login lease.
-            var found = await _context.Accounts!.FirstOrDefaultAsync(u => u.Username == body.Username, cancellationToken);
+            var identifier = body.Username.Trim();
+            var found = await _context.Accounts.FirstOrDefaultAsync(u => u.Username == identifier, cancellationToken);
+            if (found is null && identifier.Contains('@'))
+            {
+                var matches = await _context.Accounts.Where(u => u.Email == identifier)
+                    .OrderBy(u => u.AccountId).Take(2).ToListAsync(cancellationToken);
+                if (matches.Count == 1) found = matches[0];
+            }
             var accountKey = _security?.AccountKey(found?.Username ?? body.Username);
             var admission = _security?.AdmitAccount(ip, accountKey!, settings) ?? (Admitted: true, RetryAfterSeconds: 0);
             if (!admission.Admitted)

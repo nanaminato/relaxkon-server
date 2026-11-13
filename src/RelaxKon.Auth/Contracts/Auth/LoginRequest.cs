@@ -6,7 +6,7 @@ namespace RelaxKon.Auth.Contracts.Auth;
 public class LoginRequest
 {
 
-    [Required, StringLength(20)]
+    [Required, StringLength(50)]
     [JsonProperty("username")]
     public string? Username { get; set; }
 

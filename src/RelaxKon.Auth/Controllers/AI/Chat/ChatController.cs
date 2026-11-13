@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using RelaxKon.Auth.Contracts.Chat;
 using RelaxKon.Auth.Application.Chat;
+using RelaxKon.Auth.Application.Analytics;
 using RelaxKon.Auth.Application.Providers;
 using RelaxKon.Auth.Application.Routing;
 using RelaxKon.Auth.Models.AI.Chat;
@@ -33,6 +34,7 @@ public class ChatController : Controller
     [HttpPost("chat")]
     public async Task Chat(ChatCompletionRequest chatBody)
     {
+        OperationsAnalyticsMiddleware.SetModel(HttpContext, chatBody.Model);
         var started = false;
         var framed = Request.Headers.Accept.ToString().Split(',').Any(value => value.Trim().StartsWith("text/event-stream", StringComparison.OrdinalIgnoreCase));
         try
@@ -61,6 +63,7 @@ public class ChatController : Controller
         }
         catch (Exception exception)
         {
+            if (started || Response.HasStarted) OperationsAnalyticsMiddleware.MarkError(HttpContext);
             _logger.LogError("AI chat failed. TraceId: {TraceId}; ExceptionType: {ExceptionType}",
                 HttpContext.TraceIdentifier, exception.GetType().Name);
             if (started || Response.HasStarted)

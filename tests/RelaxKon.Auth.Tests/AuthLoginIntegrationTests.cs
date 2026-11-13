@@ -58,6 +58,17 @@ public class AuthLoginIntegrationTests
         Assert.That(result.Result, Is.TypeOf<OkObjectResult>());
         Assert.That(state.Status(new(), []).Restrictions, Is.Empty);
     }
+    [Test] public async Task Email_and_username_share_the_same_login_failure_budget()
+    {
+        var controller = Controller();
+        for (var attempt = 0; attempt < 5; attempt++)
+            await controller.Login(Request(attempt % 2 == 0 ? "known" : "KNOWN@example.invalid"), default);
+        var denied = await controller.Login(Request("known@example.invalid", "GoodPassword123!"), default);
+        Assert.That(denied.Result, Is.TypeOf<ObjectResult>().With.Property("StatusCode").EqualTo(429));
+        clock.Now = clock.Now.AddMinutes(16);
+        var success = await controller.Login(Request("KNOWN@example.invalid", "GoodPassword123!"), default);
+        Assert.That(success.Result, Is.TypeOf<OkObjectResult>());
+    }
     [Test] public async Task Pair_limit_returns_429_retry_after_and_recovers_without_permanent_lock()
     {
         var controller = Controller();
