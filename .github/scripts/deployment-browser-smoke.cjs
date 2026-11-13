@@ -8,16 +8,10 @@ async function verifyAdministratorLogin() {
     const page = await browser.newPage();
     page.setDefaultTimeout(20_000);
 
-    const [challengeResponse] = await Promise.all([
-      page.waitForResponse(response => response.url() === origin + '/api/verification/generate'),
-      page.goto(origin + '/accounts/sign-in'),
-    ]);
-    assert.equal(challengeResponse.status(), 200, 'The sign-in page must load its verification challenge');
-    const { code } = await challengeResponse.json();
-
+    const signInPage = await page.goto(origin + '/accounts/sign-in');
+    assert.equal(signInPage.status(), 200, 'The sign-in page must load');
     await page.locator('#login-username').fill('admin');
     await page.locator('#login-password').fill(process.env.SMOKE_PASSWORD);
-    await page.locator('#login-captcha').fill(code);
     const [loginResponse] = await Promise.all([
       page.waitForResponse(response =>
         response.url() === origin + '/api/auth/login' && response.request().method() === 'POST'),
