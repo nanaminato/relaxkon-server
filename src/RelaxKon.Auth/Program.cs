@@ -1,3 +1,4 @@
+using RelaxKon.Auth.Security.AuthSecurity;
 using RelaxKon.Auth.Data;
 using RelaxKon.Auth.Application.Media;
 using RelaxKon.Auth.Security.Registration;
@@ -147,17 +148,9 @@ builder.Services.AddSingleton<ResetTokenService>();
 builder.Services.AddScoped<IPasswordResetStore, PasswordResetStore>();
 builder.Services.AddScoped<IPasswordResetEmailSender, PasswordResetEmailSender>();
 builder.Services.AddScoped<IPasswordResetService, PasswordResetService>();
-builder.Services.AddRateLimiter(options =>
-{
-    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-    foreach (var (name, limit) in new[] { ("registration-email", 10), ("registration", 30) })
-        options.AddPolicy(name, context => RateLimitPartition.GetFixedWindowLimiter(
-            context.Connection.RemoteIpAddress?.ToString() ?? "unknown", _ => new FixedWindowRateLimiterOptions
-            { PermitLimit = limit, Window = TimeSpan.FromMinutes(15), QueueLimit = 0 }));
-    options.AddPolicy("password-reset", context => RateLimitPartition.GetFixedWindowLimiter(
-        context.Connection.RemoteIpAddress?.ToString() ?? "unknown", _ => new FixedWindowRateLimiterOptions
-        { PermitLimit = 10, Window = TimeSpan.FromMinutes(15), QueueLimit = 0 }));
-});
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<AuthSecurityState>();
+builder.Services.AddSingleton<AuthSecurityStore>();
 builder.Services.AddSignalR();
 RelaxKon.Auth.Configuration.ApiDocumentation.AddApiDocumentation(builder.Services);
 var databaseProvider = DatabaseProvider.FromConfiguration(builder.Configuration);
@@ -232,12 +225,12 @@ builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection("Jwt"))
 
 var jswSettings = builder.Configuration.GetSection("Jwt").Get<JwtSettings>()
     ?? throw new InvalidOperationException("Jwt settings are required.");
-if (string.IsNullOrWhiteSpace(jswSettings.SecretKey) ||
+if (!JwtConfigurationValidator.HasSafeSecrets(jswSettings) ||
     string.IsNullOrWhiteSpace(jswSettings.Issuer) ||
     string.IsNullOrWhiteSpace(jswSettings.Audience) ||
     string.IsNullOrWhiteSpace(jswSettings.RefreshTokenPepper))
 {
-    throw new InvalidOperationException("Jwt:Issuer, Jwt:Audience, Jwt:SecretKey, and Jwt:RefreshTokenPepper must be configured through environment-specific configuration or a secret store.");
+    throw new InvalidOperationException("Jwt:Issuer, Jwt:Audience, Jwt:SecretKey, and Jwt:RefreshTokenPepper must be configured through environment-specific configuration or a secret store. Use distinct random secrets of at least 32 bytes; example placeholders are not accepted.");
 }
 
 if (jswSettings.AccessTokenMinutes is < 10 or > 15)
@@ -250,7 +243,7 @@ if (jswSettings.RefreshTokenDays is < 1 or > 30)
     throw new InvalidOperationException("Jwt:RefreshTokenDays must be between 1 and 30.");
 }
 
-var secretKey = Encoding.UTF8.GetBytes(jswSettings.SecretKey);
+var secretKey = Encoding.UTF8.GetBytes(jswSettings.SecretKey!);
 builder.Services.AddAuthentication(options =>
     {
         options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
@@ -361,7 +354,7 @@ if (app.Environment.IsDevelopment())
 }
 app.UseStaticFiles();
 app.UseRouting();
-app.UseRateLimiter();
+app.UseMiddleware<AuthSecurityMiddleware>();
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseMiddleware<FeatureAccessMiddleware>();

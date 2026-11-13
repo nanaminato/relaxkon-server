@@ -1,3 +1,4 @@
+using RelaxKon.Auth.Security.AuthSecurity;
 using RelaxKon.Auth.Contracts.Common;
 using RelaxKon.Auth.Localization;
 using System.IdentityModel.Tokens.Jwt;
@@ -17,7 +18,7 @@ using RelaxKon.Auth.Security;
 
 namespace RelaxKon.Auth.Controllers.Auth;
 
-[ApiController]
+[ApiController, RequestSizeLimit(16384)]
 [Route("api/[controller]")]
 public class AuthController : Controller
 {
@@ -26,15 +27,20 @@ public class AuthController : Controller
     private readonly IAccountRepository _accountRepository;
     private readonly IAccountPasswordService _passwordService;
     private readonly IAuthSessionService _sessions;
+    private readonly AuthSecurityState? _security;
+    private readonly AuthSecurityStore? _securityStore;
+    private static readonly Account Dummy = CreateDummy();
+    private static Account CreateDummy() { var a = new Account(); a.Password = new AccountPasswordService().Hash(a, Guid.NewGuid().ToString()); return a; }
 
     public AuthController(AuthContext context, IOptions<JwtSettings> jwtSettings,
-        IAccountRepository accountRepository, IAccountPasswordService passwordService, IAuthSessionService sessions)
+        IAccountRepository accountRepository, IAccountPasswordService passwordService, IAuthSessionService sessions, AuthSecurityState? security = null, AuthSecurityStore? securityStore = null)
     {
         _context = context;
         _jwtSettings = jwtSettings.Value;
         _accountRepository = accountRepository;
         _passwordService = passwordService;
         _sessions = sessions;
+        _security = security; _securityStore = securityStore;
     }
 
     [HttpPost("login")]
@@ -43,11 +49,36 @@ public class AuthController : Controller
     {
         if (string.IsNullOrWhiteSpace(body.Username) || string.IsNullOrWhiteSpace(body.Password)) return Unauthorized();
 
-        var account = await ValidateUserAsync(body.Username, body.Password, cancellationToken);
-        if (account is null) return Unauthorized();
-
-        var issue = await _sessions.CreateSessionAsync(account, body.DeviceName, GetIpAddress(), cancellationToken);
-        return Ok(await BuildTokenResponseAsync(account, issue, cancellationToken));
+        var settings = _securityStore is null ? new AuthSecuritySettings() : await _securityStore.Read(cancellationToken);
+        var ip = HttpContext.Connection.RemoteIpAddress?.MapToIPv6().ToString() ?? "unknown";
+        if (_security is not null && !_security.BeginGlobalLogin(settings))
+        {
+            _security.Record("login-limited", ip, null, 1, settings);
+            return Limited(1);
+        }
+        try
+        {
+            // Resolve the database's own collation first: spelling aliases must share one failure budget.
+            // Both database lookup and password work are bounded by the global concurrent-login lease.
+            var found = await _context.Accounts!.FirstOrDefaultAsync(u => u.Username == body.Username, cancellationToken);
+            var accountKey = _security?.AccountKey(found?.Username ?? body.Username);
+            var admission = _security?.AdmitAccount(ip, accountKey!, settings) ?? (Admitted: true, RetryAfterSeconds: 0);
+            if (!admission.Admitted)
+            {
+                _security?.Record("login-limited", ip, accountKey, admission.RetryAfterSeconds, settings);
+                return Limited(admission.RetryAfterSeconds);
+            }
+            var account = await ValidateUserAsync(found, body.Password, cancellationToken);
+            if (account is null)
+            {
+                var retry = _security?.Failure(ip, accountKey!, settings) ?? 0;
+                return retry > 0 ? Limited(retry) : Unauthorized();
+            }
+            _security?.Success(ip, accountKey!, settings);
+            var issue = await _sessions.CreateSessionAsync(account, body.DeviceName, GetIpAddress(), cancellationToken);
+            return Ok(await BuildTokenResponseAsync(account, issue, cancellationToken));
+        }
+        finally { _security?.EndLogin(); }
     }
 
     [HttpPost("refresh")]
@@ -102,10 +133,13 @@ public class AuthController : Controller
         return NoContent();
     }
 
-    private async Task<Account?> ValidateUserAsync(string username, string password, CancellationToken cancellationToken)
+    private async Task<Account?> ValidateUserAsync(Account? account, string password, CancellationToken cancellationToken)
     {
-        var account = await _context.Accounts!.FirstOrDefaultAsync(u => u.Username == username, cancellationToken);
-        if (account is null) return null;
+        if (account is null)
+        {
+            _passwordService.Verify(Dummy, password);
+            return null;
+        }
 
         var verification = _passwordService.Verify(account, password);
         if (verification == PasswordVerificationState.Invalid) return null;
@@ -117,6 +151,12 @@ public class AuthController : Controller
         }
 
         return account;
+    }
+
+    private ObjectResult Limited(int seconds)
+    {
+        Response.Headers.RetryAfter = Math.Max(1, seconds).ToString(System.Globalization.CultureInfo.InvariantCulture);
+        return StatusCode(429, new CodeResponse("auth_rate_limited"));
     }
 
     private async Task<TokenResponse> BuildTokenResponseAsync(Account account, RefreshTokenIssue issue, CancellationToken cancellationToken)

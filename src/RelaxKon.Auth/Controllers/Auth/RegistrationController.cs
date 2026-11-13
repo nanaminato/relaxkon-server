@@ -7,10 +7,10 @@ using RelaxKon.Auth.Localization;
 using RelaxKon.Auth.Security.Registration;
 namespace RelaxKon.Auth.Controllers.Auth;
 
-[ApiController, AllowAnonymous, Route("api/auth")]
+[ApiController, RequestSizeLimit(16384), AllowAnonymous, Route("api/auth")]
 public sealed class RegistrationController(IRegistrationService registration) : ControllerBase
 {
-    [HttpPost("register/email-code"), EnableRateLimiting("registration-email")]
+    [HttpPost("register/email-code")]
     public async Task<ActionResult<EmailCodeResponse>> SendCode(EmailCodeRequest request, CancellationToken token)
     {
         var result = await registration.SendCode(request.Email, token);
@@ -22,7 +22,7 @@ public sealed class RegistrationController(IRegistrationService registration) : 
         }
         return Accepted(new EmailCodeResponse("registration_code_sent", ApiMessages.Get("registration_code_sent"), 600, 60));
     }
-    [HttpPost("register"), EnableRateLimiting("registration")]
+    [HttpPost("register")]
     public async Task<IActionResult> Register(RegisterRequest request, CancellationToken token)
     {
         var result = await registration.Register(request, token);

@@ -15,11 +15,14 @@ public sealed class FeatureAccessAttribute(string key) : Attribute
 
 public static class FeaturePolicies
 {
-    public static readonly string[] Keys = ["chat", "image", "tts", "transcription", "translation", "file-extraction", "image-task", "image-proxy"];
-    public static FeaturePolicyDocument Empty => new(0, Keys.Select(key => new FeaturePolicy(key, new())).ToList());
+    public static readonly string[] Keys = ["chat", "image", "tts", "transcription", "translation", "file-extraction", "image-task", "image-proxy", "auth-security-management"];
+    public static readonly string[] QuotaKeys = Keys.Where(key => key != "auth-security-management").ToArray();
+    public static FeaturePolicyDocument Empty => new(0, Keys.Select(key => new FeaturePolicy(key, key == "auth-security-management" ? new() { ["admin"] = new(true) } : new())).ToList());
     public static EffectiveFeature Resolve(FeaturePolicyDocument document, string key, IEnumerable<string> roles)
     {
         var policy = document.Features.SingleOrDefault(feature => feature.Key == key);
+        if (policy is null && key == "auth-security-management")
+            policy = new(key, new() { ["admin"] = new(true) });
         var grants = roles.Distinct(StringComparer.Ordinal).Select(role =>
             policy?.Roles.GetValueOrDefault(role)).Where(grant => grant?.Enabled == true).Cast<FeatureGrant>().ToArray();
         int? Limit(Func<FeatureGrant, int?> select) => grants.Any(grant => select(grant) is null)
@@ -28,8 +31,9 @@ public static class FeaturePolicies
             : new(key, true, Limit(g => g.RequestsPerMinute), Limit(g => g.RequestsPerDay), Limit(g => g.MaxConcurrent));
     }
     public static bool IsValid(FeaturePolicyDocument document, ISet<string> roleNames) =>
-        document.Features is not null && document.Features.Count == Keys.Length && document.Features.All(f => f is not null) &&
-        document.Features.Select(f => f.Key).Distinct().Count() == Keys.Length &&
+        document.Features is not null && document.Features.Count >= Keys.Length - 1 && document.Features.Count <= Keys.Length && document.Features.All(f => f is not null) &&
+        document.Features.Select(f => f.Key).Distinct().Count() == document.Features.Count &&
+        Keys.Where(key => key != "auth-security-management").All(key => document.Features.Any(f => f.Key == key)) &&
         document.Features.All(f => Keys.Contains(f.Key) && f.Roles is not null &&
             f.Roles.Keys.Distinct(StringComparer.OrdinalIgnoreCase).Count() == f.Roles.Count &&
             f.Roles.All(pair => roleNames.Contains(pair.Key) && pair.Value is not null &&

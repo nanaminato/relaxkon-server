@@ -58,7 +58,7 @@ public class FeatureUsageTests
         document.Features[0].Roles["user"] = new(true, 5, 100, 2);
         document.Features[0].Roles["vip"] = new(true);
         var result = FeatureUsageProjection.Create(Now, document, ["user", "vip", "admin"], []);
-        Assert.That(result.Features, Has.Count.EqualTo(FeaturePolicies.Keys.Length));
+        Assert.That(result.Features, Has.Count.EqualTo(FeaturePolicies.QuotaKeys.Length));
         var chat = result.Features[0];
         Assert.That(chat.MinuteUsed, Is.Zero);
         Assert.That(chat.MinuteRemaining, Is.Null);

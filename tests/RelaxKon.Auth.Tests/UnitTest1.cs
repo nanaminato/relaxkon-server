@@ -128,6 +128,21 @@ public class AccountPasswordServiceTests
     }
 
     [Test]
+    public void Stored_identity_hash_cannot_itself_be_used_as_password()
+    {
+        var account = new Account { Username = "user" };
+        account.Password = _service.Hash(account, "a secure password");
+        Assert.That(_service.Verify(account, account.Password), Is.EqualTo(PasswordVerificationState.Invalid));
+    }
+
+    [TestCase("AQAAAA==")]
+    [TestCase("AA==")]
+    public void Malformed_identity_hash_never_falls_back_to_plaintext(string stored)
+    {
+        Assert.That(_service.Verify(new Account { Password = stored }, stored), Is.EqualTo(PasswordVerificationState.Invalid));
+    }
+
+    [Test]
     public void Legacy_plaintext_password_is_accepted_once_and_marked_for_upgrade()
     {
         var account = new Account { Username = "legacy", Password = "legacy password" };

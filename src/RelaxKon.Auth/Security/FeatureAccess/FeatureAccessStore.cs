@@ -33,7 +33,10 @@ public sealed class FeatureAccessStore(IConfiguration configuration, IOptions<Fe
         await using var command = Command(connection, null, "SELECT Revision, Document FROM FeatureAccessPolicies WHERE Id=1");
         await using var reader = await command.ExecuteReaderAsync(token);
         if (!await reader.ReadAsync(token)) return FeaturePolicies.Empty;
-        return JsonSerializer.Deserialize<FeaturePolicyDocument>(reader.GetString(1))! with { Revision = reader.GetInt64(0) };
+        var document = JsonSerializer.Deserialize<FeaturePolicyDocument>(reader.GetString(1))! with { Revision = reader.GetInt64(0) };
+        if (!document.Features.Any(feature => feature.Key == "auth-security-management"))
+            document.Features.Add(new("auth-security-management", new() { ["admin"] = new(true) }));
+        return document;
     }
     public async Task<bool> Save(FeaturePolicyDocument document, CancellationToken token)
     {
@@ -49,6 +52,15 @@ public sealed class FeatureAccessStore(IConfiguration configuration, IOptions<Fe
             while (await reader.ReadAsync(token)) codes.Add(reader.GetString(0));
         if (document.Revision < 0 || !FeaturePolicies.IsValid(document, codes))
             throw new RoleRuleException("invalid_feature_policy");
+        // Older clients do not know this new management feature. Preserve its existing grant.
+        if (!document.Features.Any(feature => feature.Key == "auth-security-management"))
+        {
+            await using var existing = Command(connection, transaction, "SELECT Document FROM FeatureAccessPolicies WHERE Id=1");
+            var json = await existing.ExecuteScalarAsync(token) as string;
+            var previous = json is null ? FeaturePolicies.Empty : JsonSerializer.Deserialize<FeaturePolicyDocument>(json)!;
+            document.Features.Add(previous.Features.SingleOrDefault(feature => feature.Key == "auth-security-management")
+                ?? new("auth-security-management", new() { ["admin"] = new(true) }));
+        }
         await using (var seed = Command(connection, transaction,
             provider.Choose("INSERT INTO FeatureAccessPolicies (Id,Revision,Document) VALUES (1,0,@document) ON DUPLICATE KEY UPDATE Id=1",
                 "INSERT INTO FeatureAccessPolicies (Id,Revision,Document) VALUES (1,0,@document) ON CONFLICT(Id) DO NOTHING"),

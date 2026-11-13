@@ -78,8 +78,8 @@ export ConnectionStrings__ciko='server=db;port=3306;database=relaxkon;user=relax
 export ConnectionStrings__Redis='redis:6379'
 export Jwt__Issuer='relaxkon-server'
 export Jwt__Audience='relaxkon-web'
-export Jwt__SecretKey='a-long-random-secret'
-export Jwt__RefreshTokenPepper='a-separate-long-random-secret'
+export Jwt__SecretKey="$(openssl rand -hex 32)"
+export Jwt__RefreshTokenPepper="$(openssl rand -hex 32)"
 export Cors__AllowedOrigins__0='https://app.example.com'
 ```
 
@@ -128,3 +128,5 @@ src/RelaxKon.Auth/wwwroot
 后端启动时只读检查当前版本所需的数据库结构。如果检查失败，请核对连接串及错误中列出的缺失项。首次部署使用空库初始化，已有库需使用与当前版本兼容的架构。
 
 公开注册使用 SMTP 发送验证码，配置见 [注册邮箱验证](registration-email-verification.md)。
+
+登录限流与认证安全配置见 [单实例认证安全](authentication-security.md)。已有部署不要随意重新生成正在使用的强密钥；需要轮换时应单独安排。
