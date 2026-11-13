@@ -24,8 +24,12 @@ public sealed record SyncBatchResponse(long Cursor, bool Reset, bool HasMore, IR
     [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
     public bool? UiLanguageSupported { get; init; }
 
+    [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+    public IReadOnlyList<SyncEventResponse>? ImageTasks { get; init; }
+
     public static SyncBatchResponse From(SyncBatch batch) => new(batch.Cursor, batch.Reset, batch.HasMore,
-        batch.Changes.Select(ToResponse).ToList(), batch.LanguagePacks?.Select(ToResponse).ToList());
+        batch.Changes.Select(ToResponse).ToList(), batch.LanguagePacks?.Select(ToResponse).ToList())
+        { ImageTasks = batch.ImageTasks?.Select(ToResponse).ToList() };
 
     private static SyncEventResponse ToResponse(SyncEvent item) =>
         new(item.Version, item.Kind, item.Action, item.EntityId, item.HistoryId, item.Payload);

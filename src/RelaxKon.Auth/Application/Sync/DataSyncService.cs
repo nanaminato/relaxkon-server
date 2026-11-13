@@ -79,7 +79,8 @@ public sealed class DataSyncService(AuthContext database)
     }
 
     public async Task<SyncBatch> Read(int accountId, long cursor, CancellationToken token,
-        bool languagePacks = false, bool languagePackSnapshot = false, bool uiLanguage = false)
+        bool languagePacks = false, bool languagePackSnapshot = false, bool uiLanguage = false,
+        bool imageTasks = true, bool imageTaskSnapshot = false)
     {
         if (cursor < 0) throw new ArgumentException("Invalid sync cursor.");
         await using var transaction = await database.Database.BeginTransactionAsync(MySql ? IsolationLevel.ReadCommitted : IsolationLevel.Serializable, token);
@@ -92,28 +93,39 @@ public sealed class DataSyncService(AuthContext database)
             var messages = await database.ChatMessages!.AsNoTracking().Include(item => item.FileList)
                 .Where(item => item.ChatHistory!.UserId == accountId).ToListAsync(token);
             var historyIds = histories.ToDictionary(item => item.ChatHistoryId, item => item.DataId);
-            var tasks = await database.GenerateTasks!.AsNoTracking().Where(item => item.AccountId == accountId).ToListAsync(token);
+            var tasks = imageTasks ? await ReadImageTasks(accountId, state.Version, token) : [];
             var changes = histories.Select(item => new SyncEvent(state.Version, "history", "upsert", item.DataId.ToString(), null, HistoryJson(item)))
                 .Concat(messages.Select(item => new SyncEvent(state.Version, "message", "upsert", item.DataId.ToString(), historyIds[item.ChatHistoryId], MessageJson(item))))
-                .Concat(tasks.Select(item => new SyncEvent(state.Version, "task", "upsert", item.TaskId, null, TaskJson(item)))).ToList();
+                .Concat(tasks).ToList();
             var packs = languagePacks ? await ReadLanguagePacks(accountId, uiLanguage, token) : null;
             await transaction.CommitAsync(token);
-            return new(state.Version, true, false, changes, packs);
+            return new(state.Version, true, false, changes, packs, imageTasks && imageTaskSnapshot ? [] : null);
         }
         var page = await database.Set<SyncChange>().AsNoTracking().Where(item => item.AccountId == accountId && item.Version > cursor)
-            .OrderBy(item => item.Version).Take(200).ToListAsync(token);
+            .OrderBy(item => item.Version).Take(200)
+            .Select(item => new SyncChange { Version = item.Version, Kind = item.Kind, Action = item.Action,
+                EntityId = item.EntityId, HistoryId = item.HistoryId,
+                Payload = imageTasks && !imageTaskSnapshot || item.Kind != "task" ? item.Payload : null })
+            .ToListAsync(token);
         var next = page.Count == 0 ? cursor : page[^1].Version;
         var hasMore = next < state.Version;
         var snapshot = languagePacks && languagePackSnapshot && !hasMore ? await ReadLanguagePacks(accountId, uiLanguage, token) : null;
+        var tasksSnapshot = imageTasks && imageTaskSnapshot && !hasMore
+            ? await ReadImageTasks(accountId, state.Version, token) : null;
         await transaction.CommitAsync(token);
         return new(next, false, hasMore, page
             .Where(item => item.Kind switch
             {
                 "languagePack" => languagePacks && !languagePackSnapshot,
                 "uiLanguage" => languagePacks && uiLanguage && !languagePackSnapshot,
+                "task" => imageTasks && !imageTaskSnapshot,
                 _ => true
-            }).Select(ToEvent).ToList(), snapshot);
+            }).Select(ToEvent).ToList(), snapshot, tasksSnapshot);
     }
+
+    private async Task<IReadOnlyList<SyncEvent>> ReadImageTasks(int accountId, long version, CancellationToken token) =>
+        (await database.GenerateTasks!.AsNoTracking().Where(item => item.AccountId == accountId).ToListAsync(token))
+            .Select(item => new SyncEvent(version, "task", "upsert", item.TaskId, null, TaskJson(item))).ToList();
 
     private async Task<IReadOnlyList<SyncEvent>> ReadLanguagePacks(int accountId, bool uiLanguage, CancellationToken token)
     {

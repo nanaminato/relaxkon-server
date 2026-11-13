@@ -12,12 +12,14 @@ public sealed class DataSyncController(DataSyncService sync) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<SyncBatchResponse>> Read(long cursor = 0, bool languagePacks = false,
-        bool languagePackSnapshot = false, bool uiLanguage = false, CancellationToken token = default)
+        bool languagePackSnapshot = false, bool uiLanguage = false, CancellationToken token = default,
+        bool imageTasks = true, bool imageTaskSnapshot = false)
     {
         if (Request.Headers["X-Sync-Account"] != FeatureIdentity.AccountId(User)!.Value.ToString()) return Conflict(new CodeResponse("sync_account_changed"));
         try
         {
-            var batch = await sync.Read(FeatureIdentity.AccountId(User)!.Value, cursor, token, languagePacks, languagePackSnapshot, uiLanguage);
+            var batch = await sync.Read(FeatureIdentity.AccountId(User)!.Value, cursor, token, languagePacks,
+                languagePackSnapshot, uiLanguage, imageTasks, imageTaskSnapshot);
             return Ok(SyncBatchResponse.From(batch) with { UiLanguageSupported = uiLanguage ? true : null });
         }
         catch (ArgumentException) { return BadRequest(new CodeResponse("invalid_sync_cursor")); }

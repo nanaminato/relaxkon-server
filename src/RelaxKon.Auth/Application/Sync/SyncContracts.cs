@@ -7,7 +7,7 @@ public sealed record SyncMutation(Guid OperationId, string Kind, string Action, 
 public sealed record SyncEvent(long Version, string Kind, string Action, string EntityId,
     long? HistoryId, JToken? Payload);
 public sealed record SyncBatch(long Cursor, bool Reset, bool HasMore, IReadOnlyList<SyncEvent> Changes,
-    IReadOnlyList<SyncEvent>? LanguagePacks = null);
+    IReadOnlyList<SyncEvent>? LanguagePacks = null, IReadOnlyList<SyncEvent>? ImageTasks = null);
 public sealed class SyncConflictException(string message) : Exception(message);
 
 public sealed class SyncAccount

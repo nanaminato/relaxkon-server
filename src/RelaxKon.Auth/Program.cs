@@ -137,7 +137,7 @@ builder.Services.AddControllers().AddNewtonsoftJson(options =>
 });
 
 builder.Services.AddOptions<PasswordResetOptions>().Bind(builder.Configuration.GetSection("PasswordReset"))
-    .Validate(options => options.IsValid(), "PasswordReset configuration is invalid.").ValidateOnStart();
+    .Validate(options => options.IsValid(builder.Environment.IsDevelopment()), "PasswordReset configuration is invalid.").ValidateOnStart();
 var protection = builder.Services.AddDataProtection().SetApplicationName("Turbo.Auth");
 var keyPath = builder.Configuration["DataProtection:KeyPath"];
 if (!string.IsNullOrWhiteSpace(keyPath)) protection.PersistKeysToFileSystem(new DirectoryInfo(keyPath));
