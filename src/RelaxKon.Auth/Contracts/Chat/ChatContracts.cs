@@ -40,7 +40,7 @@ public sealed class ChatMessageRequest : IValidatableObject
     }
 }
 public sealed record ChatModelResponse(string? ModelName, string? ModelValue, bool Vision);
-public sealed record ChatStreamEventResponse(string Type, string? Text = null, string? Code = null);
+public sealed record ChatStreamEventResponse(string Type, string? Text = null, string? Code = null, ChatAttachment? Attachment = null);
 
 /// <summary>Accepts the existing string/vision array wire format without dynamic runtime binding.</summary>
 public sealed class ChatContentConverter : JsonConverter<ChatContent>
@@ -61,7 +61,12 @@ public sealed class ChatContentConverter : JsonConverter<ChatContent>
         {
             "text" when part["text"]?.Type == JTokenType.String => new ChatContentPart(Text: part["text"]!.Value<string>()),
             "image_url" when (part["image_url"] as JObject)?["url"]?.Type == JTokenType.String => new ChatContentPart(ImageUrl: part["image_url"]!["url"]!.Value<string>()),
-            _ => throw new JsonSerializationException("Content parts require text or image_url.url.")
+            "attachment" when part["attachment"] is JObject file &&
+                file["fileName"]?.Type == JTokenType.String && file["fileContent"]?.Type == JTokenType.String =>
+                new ChatContentPart(Attachment: new(file["fileName"]!.Value<string>()!,
+                    file["fileType"]?.Type == JTokenType.String ? file["fileType"]!.Value<string>() : null,
+                    file["fileContent"]!.Value<string>()!)),
+            _ => throw new JsonSerializationException("Content parts require text, image_url.url or an attachment.")
         };
     }
     public override void WriteJson(JsonWriter writer, ChatContent? content, JsonSerializer serializer)
@@ -72,6 +77,7 @@ public sealed class ChatContentConverter : JsonConverter<ChatContent>
         foreach (var part in content.Parts)
         {
             if (part.Text is not null) serializer.Serialize(writer, new { type = "text", text = part.Text });
+            else if (part.Attachment is not null) serializer.Serialize(writer, new { type = "attachment", attachment = part.Attachment });
             else serializer.Serialize(writer, new { type = "image_url", image_url = new { url = part.ImageUrl } });
         }
         writer.WriteEndArray();

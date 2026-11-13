@@ -7,14 +7,29 @@ namespace RelaxKon.Auth.Application.Chat;
 public interface IChatService
 {
     IAsyncEnumerable<string> Stream(ChatRequest request, CancellationToken cancellationToken);
+
+    async IAsyncEnumerable<ChatOutput> StreamEvents(ChatRequest request,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        await foreach (var text in Stream(request, cancellationToken)) yield return new(Text: text);
+    }
 }
 
 public sealed class ChatService(IChatHandlerObtain handlers, QuickModel routes, IRouteHealthTracker health,
-    PlayMixModelBacker backer, ILogger<ChatService> logger, IChatRouteAffinityStore? affinity = null) : IChatService
+    PlayMixModelBacker backer, ILogger<ChatService> logger, IChatRouteAffinityStore? affinity = null, ChatAttachmentInput? attachments = null,
+    OpenAiResponsesHandler? responses = null) : IChatService
 {
     public async IAsyncEnumerable<string> Stream(ChatRequest request,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
+        await foreach (var output in StreamEvents(request, cancellationToken))
+            if (output.Text is not null) yield return output.Text;
+    }
+
+    public async IAsyncEnumerable<ChatOutput> StreamEvents(ChatRequest request,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        var prepared = new Dictionary<bool, ChatRequest>();
         var timer = System.Diagnostics.Stopwatch.StartNew();
         double? firstTokenMilliseconds = null;
         var failed = new HashSet<int>();
@@ -31,7 +46,16 @@ public sealed class ChatService(IChatHandlerObtain handlers, QuickModel routes, 
             { throw new InvalidOperationException("All candidate AI routes failed.", exception); }
             var identity = RouteAffinity.From(route);
             route.Model = backer.Backer(route.Model!);
-            await using var stream = StreamRoute(request, route, cancellationToken).GetAsyncEnumerator(cancellationToken);
+            var useResponses = responses is not null && route.SupplierKey?.RequestIdentifier == (int)HandlerType.Openai;
+            if (!prepared.TryGetValue(useResponses, out var routedRequest))
+            {
+                routedRequest = attachments is null ? request : await attachments.Prepare(request, useResponses, cancellationToken);
+                prepared.Add(useResponses, routedRequest);
+            }
+            var response = useResponses
+                ? responses!.Stream(routedRequest, route, cancellationToken)
+                : StreamRoute(routedRequest, route, cancellationToken);
+            await using var stream = response.GetAsyncEnumerator(cancellationToken);
             var emitted = false;
             var retry = false;
             while (true)
@@ -39,6 +63,7 @@ public sealed class ChatService(IChatHandlerObtain handlers, QuickModel routes, 
                 bool hasNext;
                 try { hasNext = await stream.MoveNextAsync(); }
                 catch (OperationCanceledException) { throw; }
+                catch (ChatAttachmentException) { throw; }
                 catch (Exception exception)
                 {
                     health.RecordFailure(route.RouteId);
@@ -50,7 +75,7 @@ public sealed class ChatService(IChatHandlerObtain handlers, QuickModel routes, 
                     break;
                 }
                 if (!hasNext) break;
-                if (string.IsNullOrEmpty(stream.Current)) continue;
+                if (stream.Current.Attachment is null && string.IsNullOrEmpty(stream.Current.Text)) continue;
                 firstTokenMilliseconds ??= timer.Elapsed.TotalMilliseconds;
                 emitted = true;
                 yield return stream.Current;
@@ -65,11 +90,11 @@ public sealed class ChatService(IChatHandlerObtain handlers, QuickModel routes, 
             yield break;
         }
     }
-    private async IAsyncEnumerable<string> StreamRoute(ChatRequest request, ModelKey route,
+    private async IAsyncEnumerable<ChatOutput> StreamRoute(ChatRequest request, ModelKey route,
         [EnumeratorCancellation] CancellationToken token)
     {
         var handler = handlers.GetHandler((HandlerType)route.SupplierKey!.RequestIdentifier);
-        await foreach (var text in handler.Stream(request, route, token)) yield return text;
+        await foreach (var text in handler.Stream(request, route, token)) yield return new(Text: text);
     }
 
 }

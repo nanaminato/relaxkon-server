@@ -65,7 +65,7 @@ public class ApiContractTests
         builder.Services.AddSingleton<IRegistrationService>(_registration);
         builder.Services.AddSingleton<IChatService>(_chat);
         builder.Services.AddSingleton<IKeyRepository>(_keys);
-        builder.Services.AddSingleton<IModelRepository>(new ModelRepository(null!));
+        builder.Services.AddSingleton<IModelRepository>(new ModelsStub());
         builder.Services.AddSingleton<QuickModel>();
         builder.Services.AddSingleton<IMediaService, MediaStub>();
         builder.Services.AddSingleton<IFileContentExtractor, FileStub>();
@@ -117,12 +117,13 @@ public class ApiContractTests
     [Test]
     public async Task Legacy_chat_wire_shape_and_stream_remain_compatible()
     {
-        using var request = new HttpRequestMessage(HttpMethod.Post, "api/ai/chat") { Content = Json("{\"model\":\"test\",\"vision\":true,\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"hello\"},{\"type\":\"image_url\",\"image_url\":{\"url\":\"https://image.invalid/a.png\"}}]}]}") };
+        using var request = new HttpRequestMessage(HttpMethod.Post, "api/ai/chat") { Content = Json("{\"model\":\"test\",\"vision\":false,\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"hello\"},{\"type\":\"image_url\",\"image_url\":{\"url\":\"https://image.invalid/a.png\"}}]}]}") };
         request.Headers.Accept.ParseAdd("text/event-stream");
         using var response = await _client.SendAsync(request);
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
         Assert.That(await response.Content.ReadAsStringAsync(), Does.Contain("\"type\":\"completed\""));
         Assert.That(_chat.Last!.Messages[0].Content.Parts, Has.Count.EqualTo(2));
+        Assert.That(_chat.Last.Vision, Is.True);
     }
 
     [TestCase("api/media/tts", "{\"input\":\"hello\",\"speed\":9}")]
@@ -262,6 +263,19 @@ public class ApiContractTests
         public Task<AudioTextResponse> Translate(AudioTranslationRequest request, CancellationToken token) => throw new AssertionException("Invalid request reached service");
         public Task<ImageGenerationResponse> Image(ImageGenerationRequest request, bool dalle, CancellationToken token) => throw new AssertionException("Invalid request reached service");
     }
+    private sealed class ModelsStub : IModelRepository
+    {
+        public Task<List<Model>?> GetChatModelsAsync() => Task.FromResult<List<Model>?>(
+            [new Model { ModelValue = "test", IsChatModel = true, Vision = true }]);
+        public Task<List<Model>?> GetModelsAsync() => GetChatModelsAsync();
+        public Task<List<Model>?> GetModelsOfKeyAsync(int keyId) => GetChatModelsAsync();
+        public Task DeleteModelByIdAsync(int id) => throw new NotSupportedException();
+        public Task AddModelAsync(Model model) => throw new NotSupportedException();
+        public Task UpdateModelAsync(Model model) => throw new NotSupportedException();
+        public Task<Model?> GetModelByName(string name) => throw new NotSupportedException();
+        public Task SetEnableStatus(int id, bool enable) => throw new NotSupportedException();
+    }
+
     private sealed class FileStub : IFileContentExtractor
     { public string Extractor(FileExtractionRequest fileAdds) => throw new AssertionException("Invalid request reached service"); }
     private sealed class KeysStub : IKeyRepository

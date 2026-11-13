@@ -103,9 +103,9 @@ public sealed class FeatureAccessStore(IConfiguration configuration, IOptions<Fe
         await command.ExecuteNonQueryAsync();
     }
     public async Task<Admission> Acquire(int accountId, EffectiveFeature feature, CancellationToken token,
-        IPAddress? sourceIp = null)
+        IPAddress? sourceIp = null, bool withinChat = false)
     {
-        var countsTowardsTotal = feature.Key is not (TaskStatusFeature or ImageProxyFeature);
+        var countsTowardsTotal = !withinChat && feature.Key is not (TaskStatusFeature or ImageProxyFeature);
         var accountLimit = countsTowardsTotal ? concurrency.MaxConcurrentPerAccount : null;
         var sourceLimit = countsTowardsTotal ? concurrency.MaxConcurrentPerSourceIp : null;
         var sourceKey = sourceLimit.HasValue ? SourceKey(sourceIp) : null;

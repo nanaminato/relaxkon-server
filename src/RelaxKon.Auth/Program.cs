@@ -220,6 +220,8 @@ builder.Services.AddScoped<IChatHandler, AnthropicChatHandler>();
 builder.Services.AddScoped<IChatHandler, AlibabaChatHandler>();
 builder.Services.AddScoped<IChatHandlerObtain, ChatHandlerObtain>();
 builder.Services.AddScoped<IChatService, ChatService>();
+builder.Services.AddScoped<ChatAttachmentInput>();
+builder.Services.AddScoped<OpenAiResponsesHandler>();
 builder.Services.AddScoped<RelaxKon.Auth.Application.Media.IMediaService, RelaxKon.Auth.Application.Media.MediaService>();
 builder.Services.AddScoped<RelaxKon.Auth.Application.Providers.OpenAiClientFactory>();
 builder.Services.AddScoped<RelaxKon.Auth.Application.Sync.DataSyncService>();

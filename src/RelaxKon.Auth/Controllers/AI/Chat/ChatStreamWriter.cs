@@ -1,3 +1,4 @@
+using RelaxKon.Auth.Application.Chat;
 using System.Text.Json;
 using RelaxKon.Auth.Contracts.Chat;
 
@@ -5,9 +6,12 @@ namespace RelaxKon.Auth.Controllers.AI.Chat;
 
 public static class ChatStreamWriter
 {
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+    };
     public static async Task Write(HttpResponse response, string type, CancellationToken token,
-        string? text = null, string? code = null)
+        string? text = null, string? code = null, ChatAttachment? attachment = null)
     {
         if (!response.HasStarted)
         {
@@ -15,7 +19,7 @@ public static class ChatStreamWriter
             response.Headers.CacheControl = "no-cache";
             response.Headers["X-Accel-Buffering"] = "no";
         }
-        var payload = JsonSerializer.Serialize(new ChatStreamEventResponse(type, text, code), JsonOptions);
+        var payload = JsonSerializer.Serialize(new ChatStreamEventResponse(type, text, code, attachment), JsonOptions);
         await response.WriteAsync($"data: {payload}\n\n", token);
         await response.Body.FlushAsync(token);
     }

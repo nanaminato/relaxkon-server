@@ -44,14 +44,32 @@ public class ChatController : Controller
                 await WriteProblem(400, ApiMessages.Get("model_required"));
                 return;
             }
-            await foreach (var chunk in _chat.Stream(chatBody.ToApplication(FeatureIdentity.AccountId(User)), HttpContext.RequestAborted))
+            var request = chatBody.ToApplication(FeatureIdentity.AccountId(User));
+            if (request.Messages.Any(message => message.Content.Parts.Any(part =>
+                part.ImageUrl is not null || string.Equals(Path.GetExtension(part.Attachment?.FileName), ".pdf", StringComparison.OrdinalIgnoreCase))))
             {
+                var models = await _modelRepository.GetChatModelsAsync();
+                request.Vision = models?.Any(model => model.ModelValue == request.Model && model.Vision) == true;
+            }
+
+            await foreach (var chunk in _chat.StreamEvents(request, HttpContext.RequestAborted))
+            {
+                if (chunk.Attachment is not null)
+                {
+                    if (framed)
+                    {
+                        started = true;
+                        await ChatStreamWriter.Write(Response, "attachment", HttpContext.RequestAborted, attachment: chunk.Attachment);
+                    }
+                    continue;
+                }
+
                 started = true;
-                if (framed) await ChatStreamWriter.Write(Response, "delta", HttpContext.RequestAborted, text: chunk);
+                if (framed) await ChatStreamWriter.Write(Response, "delta", HttpContext.RequestAborted, text: chunk.Text);
                 else
                 {
                     if (!Response.HasStarted) Response.ContentType = "text/plain; charset=utf-8";
-                    await Response.WriteAsync(chunk, HttpContext.RequestAborted);
+                    await Response.WriteAsync(chunk.Text ?? "", HttpContext.RequestAborted);
                     await Response.Body.FlushAsync(HttpContext.RequestAborted);
                 }
             }
@@ -68,21 +86,24 @@ public class ChatController : Controller
                 HttpContext.TraceIdentifier, exception.GetType().Name);
             if (started || Response.HasStarted)
             {
-                if (framed) await ChatStreamWriter.Write(Response, "error", HttpContext.RequestAborted, code: "ai_unavailable");
+                if (framed) await ChatStreamWriter.Write(Response, "error", HttpContext.RequestAborted, code: exception is ChatAttachmentException attachmentError ? attachmentError.Code : "ai_unavailable");
                 else HttpContext.Abort();
                 return;
             }
             var (status, code) = exception switch
             {
+                ChatAttachmentException error => (error.Status, error.Code),
                 KeyNotFoundException => (400, "model_unavailable"),
                 NotSupportedException => (400, "chat_unsupported"),
                 _ => (502, "ai_unavailable")
             };
-            await WriteProblem(status, ApiMessages.Get(code));
+            if (exception is ChatAttachmentException { RetryAfter: int seconds })
+                Response.Headers.RetryAfter = seconds.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            await WriteProblem(status, ApiMessages.Get(code), code);
         }
     }
 
-    private async Task WriteProblem(int statusCode, string title)
+    private async Task WriteProblem(int statusCode, string title, string? code = null)
     {
         if (Response.HasStarted)
         {
@@ -91,12 +112,14 @@ public class ChatController : Controller
 
         Response.StatusCode = statusCode;
         Response.ContentType = "application/problem+json";
-        await Response.WriteAsJsonAsync(new ProblemDetails
+        var problem = new ProblemDetails
         {
             Status = statusCode,
             Title = title,
             Instance = HttpContext.Request.Path
-        });
+        };
+        if (code is not null) problem.Extensions["code"] = code;
+        await Response.WriteAsJsonAsync(problem, contentType: "application/problem+json", options: null);
         await Response.CompleteAsync();
     }
 

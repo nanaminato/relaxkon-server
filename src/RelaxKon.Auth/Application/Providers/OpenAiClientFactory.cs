@@ -25,7 +25,7 @@ public sealed class OpenAiClientFactory(IHttpClientFactory clients)
         }
         catch { http.Dispose(); throw; }
     }
-    private static string ResolveBaseUrl(string? configured)
+    internal static string ResolveBaseUrl(string? configured)
     {
         if (string.IsNullOrWhiteSpace(configured)) return "https://api.openai.com/v1";
         var trimmed = configured.Trim().TrimEnd('/');
