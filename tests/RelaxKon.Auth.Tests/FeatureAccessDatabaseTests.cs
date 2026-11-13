@@ -70,6 +70,10 @@ public class FeatureAccessDatabaseTests
             await connection.ChangeDatabaseAsync(database);
             await using (var command = new MySqlCommand(DatabaseBootstrapper.ReadScript("Schema"), connection))
                 await command.ExecuteNonQueryAsync();
+            // The default document now contains the admin-only security-management grant.
+            // Seed that real role before exercising policy validation/concurrent saves.
+            await using (var role = new MySqlCommand("INSERT INTO Roles(Code,Name) VALUES('admin','admin')", connection))
+                await role.ExecuteNonQueryAsync();
             settings.Database = database;
             var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
                 { ["ConnectionStrings:ciko"] = settings.ConnectionString }).Build();
