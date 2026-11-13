@@ -3,12 +3,14 @@ using System.Runtime.CompilerServices;
 using System.ClientModel.Primitives;
 using System.Text.Json;
 using OpenAI.Chat;
+using RelaxKon.Auth.Application.Analytics;
 using RelaxKon.Auth.Application.Providers;
 using RelaxKon.Auth.Application.Routing;
 
 namespace RelaxKon.Auth.Application.Chat;
 
-public sealed class OpenAiChatHandler(OpenAiClientFactory clients, ILogger<OpenAiChatHandler>? logger = null) : IChatHandler
+public sealed class OpenAiChatHandler(OpenAiClientFactory clients, ILogger<OpenAiChatHandler>? logger = null,
+    IHttpContextAccessor? requestContext = null) : IChatHandler
 {
     public HandlerType ProviderType => HandlerType.Openai;
     public IAsyncEnumerable<string> Stream(ChatRequest request, ModelKey route, CancellationToken token) => StreamAt(request, route, null, token);
@@ -26,6 +28,8 @@ public sealed class OpenAiChatHandler(OpenAiClientFactory clients, ILogger<OpenA
             if (!string.IsNullOrEmpty(update.RefusalUpdate)) yield return update.RefusalUpdate;
         }
         if (!finished) throw new EndOfStreamException("OpenAI stream ended without a finish reason.");
+        if (usage is not null)
+            OperationsAnalyticsMiddleware.SetUsage(requestContext?.HttpContext, usage.InputTokenCount, usage.OutputTokenCount);
         if (usage is not null && logger is not null)
         {
             // Preserve optional and newer usage fields without logging request/response content.

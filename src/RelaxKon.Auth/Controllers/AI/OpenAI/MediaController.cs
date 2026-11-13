@@ -35,7 +35,12 @@ public sealed class MediaController(IMediaService media) : ControllerBase
     private async Task<ActionResult<ImageGenerationResponse>> Generate(ImageGenerationRequest request, bool dalle, CancellationToken token)
     {
         OperationsAnalyticsMiddleware.SetModel(HttpContext, request.Model);
-        try { return Ok(await media.Image(request, dalle, token)); }
+        try
+        {
+            var result = await media.Image(request, dalle, token);
+            OperationsAnalyticsMiddleware.SetUsage(HttpContext, result.Usage?.InputTokens, result.Usage?.OutputTokens, result.Data.Count);
+            return Ok(result);
+        }
         catch (KeyNotFoundException)
         {
             return StatusCode(503, new ProblemDetails { Status = 503, Title = "No available OpenAI image route for this model",

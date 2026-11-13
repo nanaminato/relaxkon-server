@@ -6,6 +6,7 @@ using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.DataProtection;
 using Newtonsoft.Json.Linq;
 using RelaxKon.Auth.Application.Routing;
+using RelaxKon.Auth.Application.Analytics;
 using RelaxKon.Auth.Contracts.Media;
 using RelaxKon.Auth.Models.Suppliers;
 namespace RelaxKon.Auth.Application.Media;
@@ -23,7 +24,8 @@ public sealed class APIMartReceiptPendingException(APIMartGenerationResponse res
 {
     public APIMartGenerationResponse Response{get;}=response; public string RecoveryToken{get;}=recoveryToken;
 }
-public sealed class APIMartImageService(QuickModel routes,IHttpClientFactory http,IImageTaskReceipts receipts,IDataProtectionProvider protection)
+public sealed class APIMartImageService(QuickModel routes,IHttpClientFactory http,IImageTaskReceipts receipts,
+    IDataProtectionProvider protection, OperationsAnalytics? analytics = null)
 {
     private sealed record Receipt(int AccountId,int SupplierKeyId,APIMartTaskData[] Tasks,long ExpiresAt);
     private readonly IDataProtector protector=protection.CreateProtector("Turbo.APIMart.TaskReceipt.v1");
@@ -67,6 +69,10 @@ public sealed class APIMartImageService(QuickModel routes,IHttpClientFactory htt
         }
         catch(Exception error)when(error is Newtonsoft.Json.JsonException or FormatException or InvalidCastException or OverflowException){throw new APIMartProviderException("image_provider_error");}
         var receipt=new Receipt(accountId,key.SupplierKeyId,tasks,DateTimeOffset.UtcNow.AddHours(24).ToUnixTimeSeconds());
+        if (analytics is not null)
+            foreach (var task in tasks)
+                analytics.Record(new(AnalyticsDay(), "image-submission", request.Model, "", 200, 0, null,
+                    EventKey: "image-submission:" + OperationsAnalytics.TaskKey(task.TaskId)));
         await SaveReceipt(receipt);
         return Submission(tasks);
     }
@@ -116,8 +122,22 @@ public sealed class APIMartImageService(QuickModel routes,IHttpClientFactory htt
                     image.Url=image.Url.Where(url=>Uri.TryCreate(url,UriKind.Absolute,out var uri)&&uri.Scheme is "https" or "http"&&string.IsNullOrEmpty(uri.UserInfo)).ToList();
             }
             if(task.Error is not null)task.Error=new(){Code=cancelled?"image_task_cancelled":"image_task_failed",Message=cancelled?"Image generation cancelled":"Image generation failed",Type="image_generation_error"};
+            var now = DateTimeOffset.UtcNow;
+            if (analytics is not null && task.Status == "completed" &&
+                task.Completed >= now.UtcDateTime.Date.AddDays(-36).Subtract(DateTime.UnixEpoch).TotalSeconds &&
+                task.Completed <= now.ToUnixTimeSeconds())
+            {
+                var taskKey = OperationsAnalytics.TaskKey(taskId);
+                var model = await analytics.ImageTaskModel(taskKey, token);
+                var completedDay = DateTimeOffset.FromUnixTimeSeconds(task.Completed).UtcDateTime
+                    .ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+                analytics.Record(new(completedDay, "image", model, "POST /api/apimart/image-generate/gpt-image", 200, 0, null,
+                    task.Usage?.InputTokens, task.Usage?.OutputTokens, task.Result?.Images?.Sum(image => image.Url.Count) ?? 0,
+                    EventKey: "image-result:" + taskKey));
+            }
             return new(){Code=200,Data=task};
         }
         catch(Exception error)when(error is Newtonsoft.Json.JsonException or FormatException or InvalidCastException or OverflowException){throw new APIMartProviderException("image_provider_error");}
     }
+    private static string AnalyticsDay() => DateTime.UtcNow.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
 }

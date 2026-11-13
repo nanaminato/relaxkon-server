@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using MySqlConnector;
 using RelaxKon.Auth.Contracts.Auth;
+using RelaxKon.Auth.Application.Analytics;
 using RelaxKon.Auth.Data.Contexts;
 using RelaxKon.Auth.Models.Accounts;
 using RelaxKon.Auth.Models.Config;
@@ -23,7 +24,7 @@ public interface IRegistrationService
 }
 public sealed class RegistrationService(AuthContext database, IAccountPasswordService passwords, IRegistrationEmailSender sender,
     IOptions<RegistrationOptions> options, IOptions<PasswordResetOptions> smtp, IOptions<JwtSettings> jwt,
-    TimeProvider time, ILogger<RegistrationService> logger) : IRegistrationService
+    TimeProvider time, ILogger<RegistrationService> logger, OperationsAnalytics? analytics = null) : IRegistrationService
 {
     private bool Available => options.Value.Enabled && smtp.Value.IsSmtpValid();
     private bool MySql => database.Database.ProviderName?.Contains("MySql", StringComparison.OrdinalIgnoreCase) == true;
@@ -120,6 +121,8 @@ public sealed class RegistrationService(AuthContext database, IAccountPasswordSe
             database.AccountRoles!.Add(new AccountRole { Account = account, Role = role });
             challenge.AttemptsLeft = 0; challenge.CodeHash = ""; challenge.ExpiresAt = now;
             await database.SaveChangesAsync(token); await transaction.CommitAsync(token);
+            analytics?.Record(new(now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), "registration-cohort", "",
+                "POST /api/auth/register", 200, 0, account.AccountId, EventKey: $"registration:{account.AccountId}"));
             return RegistrationStatus.Success;
         }
         finally
