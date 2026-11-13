@@ -1,7 +1,6 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
-using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using RelaxKon.Auth.Application.Chat;
@@ -53,7 +52,7 @@ public sealed class OpenAiResponsesChatTests
     {
         using var transport = new Transport();
         var handler = new OpenAiResponsesHandler(transport, new ConfigurationBuilder().Build(),
-            new HttpContextAccessor(), NullLogger<OpenAiResponsesHandler>.Instance);
+            NullLogger<OpenAiResponsesHandler>.Instance);
         var route = new ModelKey { Model = "gpt-6.1-sol", SupplierKey = new SupplierKey { ApiKey = "fixture-key" } };
         var extractor = new StubExtractor();
         var input = new ChatAttachmentInput(extractor);

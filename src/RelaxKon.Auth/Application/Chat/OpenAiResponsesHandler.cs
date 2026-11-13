@@ -3,7 +3,6 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
-using RelaxKon.Auth.Application.Analytics;
 using RelaxKon.Auth.Application.Providers;
 using RelaxKon.Auth.Application.Routing;
 using RelaxKon.Auth.Contracts.Files;
@@ -11,7 +10,7 @@ using RelaxKon.Auth.Contracts.Files;
 namespace RelaxKon.Auth.Application.Chat;
 
 public sealed class OpenAiResponsesHandler(IHttpClientFactory clients, IConfiguration configuration,
-    IHttpContextAccessor requestContext, ILogger<OpenAiResponsesHandler> logger)
+    ILogger<OpenAiResponsesHandler> logger)
 {
     private static readonly string[] DefaultToolModels =
         ["gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "gpt-6.1-sol", "gpt-6.1-terra"];
@@ -211,7 +210,6 @@ public sealed class OpenAiResponsesHandler(IHttpClientFactory clients, IConfigur
         if (!response.TryGetProperty("usage", out var usage) || usage.ValueKind != JsonValueKind.Object) return;
         var input = usage.GetProperty("input_tokens").GetInt32();
         var output = usage.GetProperty("output_tokens").GetInt32();
-        OperationsAnalyticsMiddleware.SetUsage(requestContext.HttpContext, input, output);
         int? cached = usage.TryGetProperty("input_tokens_details", out var details) &&
             details.ValueKind == JsonValueKind.Object && details.TryGetProperty("cached_tokens", out var count) &&
             count.TryGetInt32(out var tokens) ? tokens : null;
