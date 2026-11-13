@@ -66,7 +66,7 @@ jobs:
         if: matrix.mode == 'compose'
         with:
           repository: nanaminato/relaxkon-web
-          ref: 45986d566eb3d9dfa075be3bf455e6d1d7709cc4
+          ref: b4a2fdc56572110665bda3d5138cb8ef398a206c
           path: frontend
           persist-credentials: false
 
