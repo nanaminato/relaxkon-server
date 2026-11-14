@@ -4,6 +4,12 @@
 
 仓库迁移目标为 [`nanaminato/relaxkon-server`](https://github.com/nanaminato/relaxkon-server)，前端为 [`relaxkon-web`](https://github.com/nanaminato/relaxkon-web)。本次只变更仓库和展示名称，保留既有程序集、认证、数据库与 API 兼容标识；见 [渐进式迁移说明](docs/relaxkon-migration.md)。
 
+## 实际运行截图
+
+在开发环境启动服务后，打开 `/swagger` 可查看按控制器分组的 API，并展开各接口查看请求参数和响应结构。
+
+![RelaxKon Server 的 Swagger UI，展示账户接口列表](docs/screenshots/swagger-api.jpg)
+
 ## 文档
 
 - [注册邮箱验证](docs/registration-email-verification.md)：验证码流程、SMTP 配置及数据库迁移。
