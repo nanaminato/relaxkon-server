@@ -76,6 +76,19 @@ public partial class AuthContext : DbContext
         modelBuilder.Entity<ChatHistory>().ToTable("ChatHistories");
         modelBuilder.Entity<ChatMessage>().ToTable("ChatMessages");
         modelBuilder.Entity<FileAdds>().ToTable("FileAdds");
+        modelBuilder.Entity<RelaxKon.Auth.Application.Library.LibraryFile>(entity =>
+        {
+            entity.ToTable("LibraryFiles");
+            entity.HasKey(f => f.Id);
+            entity.Property(f => f.Id).HasMaxLength(32);
+            entity.Property(f => f.Name).HasMaxLength(200);
+            entity.Property(f => f.ContentType).HasMaxLength(100);
+            entity.Property(f => f.CreatedAt).HasConversion(v => v, v => DateTime.SpecifyKind(v, DateTimeKind.Utc));
+            entity.Property(f => f.UpdatedAt).HasConversion(v => v, v => DateTime.SpecifyKind(v, DateTimeKind.Utc));
+            if (Database.IsMySql()) entity.Property(f => f.Content).HasColumnType("longblob");
+            entity.HasIndex(f => new { f.AccountId, f.UpdatedAt });
+            entity.HasOne<Account>().WithMany().HasForeignKey(f => f.AccountId).OnDelete(DeleteBehavior.Cascade);
+        });
         ConfigureRuntimeModel(modelBuilder);
         if (Database.IsSqlite())
         {

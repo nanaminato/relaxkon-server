@@ -11,6 +11,7 @@ public static class ArchitectureSchemaCheck
 {
     private static readonly Dictionary<string, string[]> RequiredColumns = new(StringComparer.Ordinal)
     {
+        ["LibraryFiles"] = ["Id", "AccountId", "Name", "ContentType", "Size", "Content", "CreatedAt", "UpdatedAt", "Version"],
         ["Roles"] = ["Code", "Description"],
         ["FeatureAccessTasks"] = ["TaskId", "AccountId", "SupplierKeyId"],
         ["RoutingConfiguration"] = ["Id", "Version"],
@@ -22,6 +23,7 @@ public static class ArchitectureSchemaCheck
 
     private static readonly Dictionary<string, string[]> SqliteRequiredColumns = new(StringComparer.Ordinal)
     {
+        ["LibraryFiles"] = ["Id", "AccountId", "Name", "ContentType", "Size", "Content", "CreatedAt", "UpdatedAt", "Version"],
         ["__efmigrationshistory"] = ["MigrationId", "ProductVersion"],
         ["Accounts"] = ["AccountId", "Username", "Password", "SecurityStamp", "Email"],
         ["RefreshTokens"] = ["RefreshTokenId", "AccountId", "TokenHash", "SessionId", "CreatedAt", "ExpiresAt", "RevokedAt", "LastUsedAt", "ReplacedByTokenId", "DeviceName", "CreatedByIp"],

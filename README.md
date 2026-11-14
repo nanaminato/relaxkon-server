@@ -48,3 +48,5 @@ dotnet run --project src/RelaxKon.Auth/RelaxKon.Auth.csproj --launch-profile htt
 首次启动后，使用管理员接口配置供应商密钥、模型以及密钥与模型的关联；已启用的关联会在启动时加载到内存密钥池。详见 [部署与配置](docs/deployment.md) 和 [API 使用](docs/api.md)。
 
 - [认证安全与登录防爆破](docs/authentication-security.md)：单实例内存计数、后台实时配置、MySQL/SQLite 持久化与部署注意事项。
+
+- [个人资料空间](docs/personal-library.md)：私有文件、跨设备访问、存储配额及数据库升级。

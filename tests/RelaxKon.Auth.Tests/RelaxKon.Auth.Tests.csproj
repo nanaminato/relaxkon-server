@@ -11,6 +11,8 @@
     </PropertyGroup>
 
     <ItemGroup>
+      <EmbeddedResource Include="../../src/RelaxKon.Auth/Resources/library/mysql-upgrade.sql" LogicalName="LibraryUpgrade.sql" />
+      <EmbeddedResource Include="../../src/RelaxKon.Auth/Resources/library/sqlite-upgrade.sql" LogicalName="LibrarySqliteUpgrade.sql" />
       <EmbeddedResource Include="../../src/RelaxKon.Auth/Resources/account/create-admin.sql" LogicalName="CreateAdmin.sql" />
       <EmbeddedResource Include="Fixtures/performance-index-upgrade.sql" LogicalName="PerformanceIndexes.sql" />
       <EmbeddedResource Include="Fixtures/feature-access.sql" LogicalName="FeatureAccess.sql" />

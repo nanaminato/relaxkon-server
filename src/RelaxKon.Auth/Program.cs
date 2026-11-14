@@ -65,6 +65,10 @@ if (args.Length == 1 && string.Equals(args[0], "--hash-password", StringComparis
 }
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Services.AddOptions<RelaxKon.Auth.Application.Library.LibraryOptions>().BindConfiguration("Library")
+    .Validate(o => o.IsValid(), "Invalid Library quotas.").ValidateOnStart();
+builder.Services.AddSingleton<RelaxKon.Auth.Application.Library.LibraryAdmission>();
+builder.Services.AddScoped<RelaxKon.Auth.Application.Library.LibraryUploadAdmissionFilter>();
 var knownProxies = (builder.Configuration.GetSection("ForwardedHeaders:KnownProxies").Get<string[]>() ?? [])
     .Select(IPAddress.Parse).ToArray();
 var forwardLimit = builder.Configuration.GetValue("ForwardedHeaders:ForwardLimit", 1);

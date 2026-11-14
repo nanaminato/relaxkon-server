@@ -321,3 +321,17 @@ CREATE TRIGGER routing_ModelKeyBinds_delete AFTER DELETE ON ModelKeyBinds FOR EA
 CREATE TRIGGER routing_AvailableModels_insert AFTER INSERT ON AvailableModels FOR EACH ROW UPDATE RoutingConfiguration SET Version=Version+1 WHERE Id=1;
 CREATE TRIGGER routing_AvailableModels_update AFTER UPDATE ON AvailableModels FOR EACH ROW UPDATE RoutingConfiguration SET Version=Version+1 WHERE Id=1;
 CREATE TRIGGER routing_AvailableModels_delete AFTER DELETE ON AvailableModels FOR EACH ROW UPDATE RoutingConfiguration SET Version=Version+1 WHERE Id=1;
+-- Additive maintenance migration. Back up and stop the server before applying.
+CREATE TABLE LibraryFiles (
+    Id varchar(32) NOT NULL PRIMARY KEY,
+    AccountId int NOT NULL,
+    Name varchar(200) NOT NULL,
+    ContentType varchar(100) NOT NULL,
+    Size bigint NOT NULL,
+    Content longblob NOT NULL,
+    CreatedAt datetime(6) NOT NULL,
+    UpdatedAt datetime(6) NOT NULL,
+    Version bigint NOT NULL,
+    INDEX IX_LibraryFiles_AccountId_UpdatedAt (AccountId, UpdatedAt),
+    CONSTRAINT FK_LibraryFiles_Accounts_AccountId FOREIGN KEY (AccountId) REFERENCES Accounts(AccountId) ON DELETE CASCADE
+);
