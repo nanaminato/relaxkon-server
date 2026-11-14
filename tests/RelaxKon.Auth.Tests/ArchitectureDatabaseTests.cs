@@ -27,6 +27,7 @@ public class ArchitectureDatabaseTests
         await database.Execute(MySqlTestDatabase.Resource("FeatureAccess.sql"));
         await database.Execute(MySqlTestDatabase.Resource("ApimartTaskRoute.sql"));
         await database.Execute(MySqlTestDatabase.Resource("PerformanceIndexes.sql"));
+        await database.Execute(MySqlTestDatabase.Resource("LibraryUpgrade.sql"));
         await RelaxKon.Auth.Bootstrap.ArchitectureSchemaCheck.Validate(connection.ConnectionString);
     }
 
@@ -158,11 +159,13 @@ public class ArchitectureDatabaseTests
     {
         await using var upgraded = await MySqlTestDatabase.Create(legacy: true);
         await using var fresh = await MySqlTestDatabase.Create();
+        // MySQL may retain a final statement delimiter depending on script batching.
+        // Normalize only that delimiter; trigger bodies and behavior stay checked.
         string[] fingerprints = [
             "SELECT TABLE_NAME,COLUMN_NAME,ORDINAL_POSITION,COLUMN_TYPE,IS_NULLABLE,COLUMN_DEFAULT,EXTRA,CHARACTER_SET_NAME,COLLATION_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() ORDER BY TABLE_NAME,ORDINAL_POSITION",
             "SELECT TABLE_NAME,INDEX_NAME,NON_UNIQUE,SEQ_IN_INDEX,COLUMN_NAME FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() ORDER BY TABLE_NAME,INDEX_NAME,SEQ_IN_INDEX",
             "SELECT TABLE_NAME,CONSTRAINT_NAME,COLUMN_NAME,REFERENCED_TABLE_NAME,REFERENCED_COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA=DATABASE() ORDER BY TABLE_NAME,CONSTRAINT_NAME,ORDINAL_POSITION",
-            "SELECT TRIGGER_NAME,EVENT_MANIPULATION,EVENT_OBJECT_TABLE,ACTION_TIMING,ACTION_STATEMENT FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA=DATABASE() ORDER BY TRIGGER_NAME"
+            "SELECT TRIGGER_NAME,EVENT_MANIPULATION,EVENT_OBJECT_TABLE,ACTION_TIMING,TRIM(TRAILING ';' FROM TRIM(ACTION_STATEMENT)) FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA=DATABASE() ORDER BY TRIGGER_NAME"
         ];
         foreach (var query in fingerprints) Assert.That(await upgraded.Rows(query), Is.EqualTo(await fresh.Rows(query)));
         await using var scope = upgraded.Auth();
