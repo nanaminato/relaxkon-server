@@ -70,6 +70,35 @@ docker compose logs --tail=100 server
 
 常规重建和重启会保留命名卷。备份时应包含 SQLite 数据库和 Data Protection 密钥。使用外部 MySQL 时也需要单独备份 MySQL 数据。`docker compose down -v` 会删除 Compose 命名卷。
 
+## Nginx 同步接口的请求体上限
+
+在生产站点的 HTTPS `server` 块中，为 `/api/sync/data` 配置 **28 MiB** 的请求体上限。聊天附件以 Base64 随消息同步，请求体会大于原始文件。生产环境曾因 Nginx 默认的 1 MiB 上限拒绝一笔 6,731,609 字节的同步写入。浏览器会先提交待同步记录，这笔写入返回 413 后，会话历史也无法继续拉取。
+
+以现有 `location /api/` 为模板添加以下精确匹配规则，沿用该部署的转发头、缓冲和超时设置。示例使用生产 Compose 的宿主机监听端口 `6080`，部署时按实际端口填写。
+
+```nginx
+location = /api/sync/data {
+    client_max_body_size 28m;
+    include proxy_params;
+    proxy_pass http://127.0.0.1:6080;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_request_buffering off;
+    proxy_buffering off;
+    proxy_read_timeout 300s;
+}
+```
+
+备份站点配置，执行 `sudo nginx -t`，通过后执行 `sudo systemctl reload nginx`。
+
+通过公开 HTTPS 域名向 `POST /api/sync/data` 发送两份只含 `padding` 字段的 JSON。使用已登录账户的 Bearer 令牌和匹配的 `X-Sync-Account` 请求头。这两份请求缺少同步操作的必填字段，不会写入数据。
+
+| `padding` 字符数（ASCII） | 预期响应 |
+| --- | --- |
+| 6,731,609 | 应用返回 HTTP 400 和 JSON 校验错误，表明请求已通过 Nginx |
+| 30,000,000 | Nginx 返回 HTTP 413，表明 28 MiB 上限仍生效 |
+
+最后在浏览器刷新聊天页。有待同步记录时点击「重试同步」，确认会话重新出现在列表中。打开含生成附件的会话，点击附件卡片上的「下载」，核对实际下载文件的内容。若仍遇到 413，在 Nginx 错误日志中查找 `client intended to send too large body`，核对请求路径和字节数。有关拒绝记录的统计配置，参见 [运营概览](operations-analytics.md#接入-nginx-的同步-413)。
+
 ## 从源码构建镜像
 
 如需构建自定义镜像，在后端仓库旁克隆 `relaxkon-web`，选择兼容的前端版本，然后用 Node.js 24 和 npm 构建。以下命令在后端仓库根目录执行。

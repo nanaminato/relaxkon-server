@@ -97,6 +97,8 @@ ASPNETCORE_ENVIRONMENT=Production dotnet ./publish/RelaxKon.Auth.dll
 
 示例配置中的 Kestrel 监听 `0.0.0.0:6000`。在生产环境使用反向代理终止 TLS，并将代理来源加入 CORS 白名单。Swagger 仅在 `Development` 环境注册，不应默认公开到生产网络。
 
+使用 Nginx 时，按 [同步接口的请求体上限](deployment.zh-CN.md#nginx-同步接口的请求体上限) 为 `/api/sync/data` 配置 28 MiB 并验证。
+
 ## 部署前端
 
 用户端与管理端已合并为单一 Angular 应用：[relaxkon-web](https://github.com/nanaminato/relaxkon-web)。生产构建使用环境文件中的同源 API 地址 `/`：
