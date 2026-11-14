@@ -15,7 +15,12 @@ public class WordDocumentProcessor: IWordDocumentProcessor
         var documentEntry = archive.GetEntry("word/document.xml")
             ?? throw new InvalidDataException("The DOCX file does not contain word/document.xml.");
         using var documentStream = documentEntry.Open();
-        var document = XDocument.Load(documentStream);
+        using var reader = System.Xml.XmlReader.Create(documentStream, new System.Xml.XmlReaderSettings
+        {
+            DtdProcessing = System.Xml.DtdProcessing.Prohibit,
+            MaxCharactersInDocument = 16 * 1024 * 1024
+        });
+        var document = XDocument.Load(reader);
 
         foreach (var paragraph in document.Descendants(Wordprocessing + "p"))
         {

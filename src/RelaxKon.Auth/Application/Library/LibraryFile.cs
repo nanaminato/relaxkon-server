@@ -19,6 +19,15 @@ public sealed record LibraryListing(IReadOnlyList<LibraryItem> Items, long UsedB
     long MaxFileBytes, int MaxFiles);
 public sealed record RenameLibraryFile(string Name, long Version);
 
+public sealed class LibraryQuota
+{
+    public int Id { get; set; } = 1;
+    public long MaxBytes { get; set; }
+    public long MaxFileBytes { get; set; }
+}
+
+public sealed record LibraryLimits(long MaxBytes, long MaxFileBytes);
+
 public sealed class LibraryOptions
 {
     public const long HardFileLimit = 10 * 1024 * 1024;
@@ -48,4 +57,13 @@ internal sealed class LibraryDownloadStream(byte[] content, SemaphoreSlim gate) 
         if (Interlocked.Exchange(ref released, 1) == 0) gate.Release();
     }
     public override ValueTask DisposeAsync() { Dispose(); return ValueTask.CompletedTask; }
+}
+
+public sealed class LibraryRevision
+{
+    public string FileId { get; set; } = "";
+    public long Version { get; set; }
+    public string Name { get; set; } = "";
+    public byte[] Content { get; set; } = [];
+    public DateTime UpdatedAt { get; set; }
 }

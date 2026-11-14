@@ -89,6 +89,18 @@ public partial class AuthContext : DbContext
             entity.HasIndex(f => new { f.AccountId, f.UpdatedAt });
             entity.HasOne<Account>().WithMany().HasForeignKey(f => f.AccountId).OnDelete(DeleteBehavior.Cascade);
         });
+        modelBuilder.Entity<RelaxKon.Auth.Application.Library.LibraryQuota>().ToTable("LibraryQuota");
+        modelBuilder.Entity<RelaxKon.Auth.Application.Library.LibraryRevision>(entity =>
+        {
+            entity.ToTable("LibraryRevisions");
+            entity.HasKey(r => new { r.FileId, r.Version });
+            entity.Property(r => r.FileId).HasMaxLength(32);
+            entity.Property(r => r.Name).HasMaxLength(200);
+            entity.Property(r => r.UpdatedAt).HasConversion(v => v, v => DateTime.SpecifyKind(v, DateTimeKind.Utc));
+            if (Database.IsMySql()) entity.Property(r => r.Content).HasColumnType("longblob");
+            entity.HasOne<RelaxKon.Auth.Application.Library.LibraryFile>().WithMany()
+                .HasForeignKey(r => r.FileId).OnDelete(DeleteBehavior.Cascade);
+        });
         ConfigureRuntimeModel(modelBuilder);
         if (Database.IsSqlite())
         {
