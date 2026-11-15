@@ -1,0 +1,1 @@
+ALTER TABLE LibraryQuota ADD COLUMN MaxHistoryBytes INTEGER NULL;

@@ -1,5 +1,6 @@
 CREATE TABLE IF NOT EXISTS LibraryQuota (
     Id INTEGER NOT NULL PRIMARY KEY,
     MaxBytes INTEGER NOT NULL,
-    MaxFileBytes INTEGER NOT NULL
+    MaxFileBytes INTEGER NOT NULL,
+    MaxHistoryBytes INTEGER NULL
 );

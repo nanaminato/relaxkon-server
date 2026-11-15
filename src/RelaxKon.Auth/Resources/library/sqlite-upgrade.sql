@@ -16,7 +16,8 @@ CREATE INDEX IX_LibraryFiles_AccountId_UpdatedAt ON LibraryFiles(AccountId, Upda
 CREATE TABLE IF NOT EXISTS LibraryQuota (
     Id INTEGER NOT NULL PRIMARY KEY,
     MaxBytes INTEGER NOT NULL,
-    MaxFileBytes INTEGER NOT NULL
+    MaxFileBytes INTEGER NOT NULL,
+    MaxHistoryBytes INTEGER NULL
 );
 
 CREATE TABLE IF NOT EXISTS LibraryRevisions (

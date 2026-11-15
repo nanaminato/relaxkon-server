@@ -157,6 +157,43 @@ public class LibraryTests
             .Select(group => group.Sum(revision => (long?)revision.Content.Length)).ToQueryString();
         Assert.That(sql, Does.Match("(?i)SUM\\(.*LENGTH\\("));
     }
+    [Test] public async Task Lowering_history_limit_preserves_versions_until_each_owner_saves()
+    {
+        await using var db = Database();
+        db.Set<LibraryQuota>().Add(new LibraryQuota { MaxBytes = 8, MaxFileBytes = 4 });
+        await db.SaveChangesAsync();
+        var owner = Controller(db, admission);
+        var other = Controller(db, admission, account: 2);
+        static async Task<LibraryListing> Listing(LibraryController controller) =>
+            (LibraryListing)((OkObjectResult)await controller.List(default)).Value!;
+        Assert.That((await Listing(owner)).MaxHistoryBytes, Is.EqualTo(8));
+        var first = (LibraryItem)((CreatedResult)await owner.CreateDocument(UploadFile([65, 66, 67]), default)).Value!;
+        var second = (LibraryItem)((CreatedResult)await other.CreateDocument(UploadFile([65, 66, 67]), default)).Value!;
+        Assert.That(await owner.UpdateDocument(first.Id, UploadFile([68, 69]), 1, default), Is.TypeOf<OkObjectResult>());
+        Assert.That(await other.UpdateDocument(second.Id, UploadFile([]), 1, default), Is.TypeOf<OkObjectResult>());
+
+        Assert.That(await owner.SetLimits(new(9, 4, 2), default), Is.TypeOf<OkObjectResult>());
+        Assert.That(await owner.SetLimits(new(10, 4, null), default), Is.TypeOf<OkObjectResult>());
+        var lowered = await Listing(owner);
+        Assert.That(lowered.MaxBytes, Is.EqualTo(10));
+        Assert.That(lowered.MaxHistoryBytes, Is.EqualTo(2));
+        Assert.That(lowered.HistoryUsedBytes, Is.EqualTo(3));
+        Assert.That(await owner.UpdateDocument(first.Id, UploadFile([]), 1, default), Is.TypeOf<ConflictResult>());
+        Assert.That((await Listing(owner)).HistoryUsedBytes, Is.EqualTo(3));
+
+        Assert.That(await owner.UpdateDocument(first.Id, UploadFile([]), 2, default), Is.TypeOf<OkObjectResult>());
+        var revisions = await db.Set<LibraryRevision>().Where(r => r.FileId == first.Id).Select(r => r.Version).ToListAsync();
+        Assert.That(revisions, Is.EqualTo(new long[] { 2 }));
+        Assert.That((await Listing(owner)).HistoryUsedBytes, Is.EqualTo(2));
+        Assert.That((await Listing(other)).HistoryUsedBytes, Is.EqualTo(3));
+
+        Assert.That(await owner.SetLimits(new(10, 4, 0), default), Is.TypeOf<OkObjectResult>());
+        Assert.That((await Listing(owner)).HistoryUsedBytes, Is.EqualTo(2));
+        Assert.That(await owner.UpdateDocument(first.Id, UploadFile([]), 3, default), Is.TypeOf<OkObjectResult>());
+        Assert.That(await db.Set<LibraryRevision>().AnyAsync(r => r.FileId == first.Id), Is.False);
+        Assert.That(await other.CreateDocument(UploadFile([]), default), Is.TypeOf<CreatedResult>());
+        Assert.That((await Listing(other)).HistoryUsedBytes, Is.Zero);
+    }
     [TestCase("../private.txt")][TestCase("folder\\file.txt")][TestCase("bad\nname")][TestCase(" ")]
     public async Task Filenames_cannot_inject_paths_or_headers(string name)
     {

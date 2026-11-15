@@ -24,18 +24,21 @@ public sealed class LibraryQuota
     public int Id { get; set; } = 1;
     public long MaxBytes { get; set; }
     public long MaxFileBytes { get; set; }
+    public long? MaxHistoryBytes { get; set; }
 }
 
-public sealed record LibraryLimits(long MaxBytes, long MaxFileBytes);
+public sealed record LibraryLimits(long MaxBytes, long MaxFileBytes, long MaxHistoryBytes);
+public sealed record UpdateLibraryLimits(long MaxBytes, long MaxFileBytes, long? MaxHistoryBytes);
 
 public sealed class LibraryOptions
 {
     public const long HardFileLimit = 10 * 1024 * 1024;
+    public const long HardStorageLimit = 1024L * 1024 * 1024;
     public long MaxFileBytes { get; set; } = HardFileLimit;
     public long MaxBytes { get; set; } = 100 * 1024 * 1024;
     public int MaxFiles { get; set; } = 100;
     public bool IsValid() => MaxFileBytes is > 0 and <= HardFileLimit && MaxBytes >= MaxFileBytes
-        && MaxBytes <= 1024L * 1024 * 1024 && MaxFiles is > 0 and <= 1000;
+        && MaxBytes <= HardStorageLimit && MaxFiles is > 0 and <= 1000;
 }
 
 // Single-instance bounded admission: never build an unbounded waiter queue or one lock per account.

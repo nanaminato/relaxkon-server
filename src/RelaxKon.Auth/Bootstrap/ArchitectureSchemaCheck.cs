@@ -12,7 +12,7 @@ public static class ArchitectureSchemaCheck
     private static readonly Dictionary<string, string[]> RequiredColumns = new(StringComparer.Ordinal)
     {
         ["LibraryRevisions"] = ["FileId", "Version", "Name", "Content", "UpdatedAt"],
-        ["LibraryQuota"] = ["Id", "MaxBytes", "MaxFileBytes"],
+        ["LibraryQuota"] = ["Id", "MaxBytes", "MaxFileBytes", "MaxHistoryBytes"],
         ["LibraryFiles"] = ["Id", "AccountId", "Name", "ContentType", "Size", "Content", "CreatedAt", "UpdatedAt", "Version"],
         ["Roles"] = ["Code", "Description"],
         ["FeatureAccessTasks"] = ["TaskId", "AccountId", "SupplierKeyId"],
@@ -26,7 +26,7 @@ public static class ArchitectureSchemaCheck
     private static readonly Dictionary<string, string[]> SqliteRequiredColumns = new(StringComparer.Ordinal)
     {
         ["LibraryRevisions"] = ["FileId", "Version", "Name", "Content", "UpdatedAt"],
-        ["LibraryQuota"] = ["Id", "MaxBytes", "MaxFileBytes"],
+        ["LibraryQuota"] = ["Id", "MaxBytes", "MaxFileBytes", "MaxHistoryBytes"],
         ["LibraryFiles"] = ["Id", "AccountId", "Name", "ContentType", "Size", "Content", "CreatedAt", "UpdatedAt", "Version"],
         ["__efmigrationshistory"] = ["MigrationId", "ProductVersion"],
         ["Accounts"] = ["AccountId", "Username", "Password", "SecurityStamp", "Email"],

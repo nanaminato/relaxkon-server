@@ -16,7 +16,8 @@ CREATE TABLE LibraryFiles (
 CREATE TABLE IF NOT EXISTS LibraryQuota (
     Id int NOT NULL PRIMARY KEY,
     MaxBytes bigint NOT NULL,
-    MaxFileBytes bigint NOT NULL
+    MaxFileBytes bigint NOT NULL,
+    MaxHistoryBytes bigint NULL
 );
 
 CREATE TABLE IF NOT EXISTS LibraryRevisions (

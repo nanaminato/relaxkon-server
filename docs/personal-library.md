@@ -6,7 +6,7 @@ Authenticated users can keep private files independently of chat messages. Binar
 
 All routes require the existing bearer authentication and use the authenticated account ID, never an account ID supplied by the caller:
 
-- `GET /api/library`: `{ items, usedBytes, maxBytes, maxFileBytes, maxFiles }`, metadata only.
+- `GET /api/library`: `{ items, usedBytes, maxBytes, maxFileBytes, maxFiles, historyUsedBytes, maxHistoryBytes }`, metadata only.
 - `POST /api/library`: multipart field `file`; returns `201` and metadata.
 - `GET /api/library/{id}/content`: attachment download, `private, no-store`, `nosniff`. URLs are not public share links.
 - `POST /api/library/documents`: multipart UTF-8 Markdown in field `file`; accepts an empty document.
@@ -14,7 +14,7 @@ All routes require the existing bearer authentication and use the authenticated 
 - `GET /api/library/{id}/revisions`: metadata for up to 10 previous document saves.
 - `GET /api/library/{id}/revisions/{version}`: private Markdown snapshot for preview. Restore by saving that snapshot against the current document version.
 - `GET /api/library/{id}/text-preview`: extracted text for DOCX; formatting is omitted.
-- `GET /api/library/limits` and `PUT /api/library/limits`: admin-only persisted limits, in bytes.
+- `GET /api/library/limits` and `PUT /api/library/limits`: admin-only persisted limits in bytes, including `maxHistoryBytes`. GET also returns installation-wide `usedBytes` and `historyUsedBytes`.
 - `PATCH /api/library/{id}`: `{ name, version }`; increments the version.
 - `DELETE /api/library/{id}?version=N`: deletes only the current owner/version. Permanent file deletion requires confirmation in the client; it does not edit existing chat attachments.
 
@@ -23,6 +23,8 @@ Metadata: `{ id, name, contentType, size, createdAt, updatedAt, version }`. Date
 ## Limits and deployment
 
 `Library:MaxFileBytes` defaults to 10 MiB (hard upper bound 10 MiB); `Library:MaxBytes` defaults to 100 MiB per account (maximum configurable 1 GiB); `Library:MaxFiles` defaults to 100 (maximum 1000). Configure via JSON or environment variables, e.g. `Library__MaxBytes`. These are startup defaults. Admins can override the per-account and single-file limits immediately under Admin → Library limits. Lowering either limit preserves existing files. New uploads and edits that increase file size must fit the limits; a size-neutral or shrinking edit is allowed.
+
+The separate per-account history budget initially inherits the existing per-account storage limit. Admins can set it independently from 0 to 1 GiB in the same settings page. Lowering it preserves existing revisions until the affected account next saves a document successfully, which removes its oldest revisions as needed. Setting the limit to zero clears that account's history on its next successful document save.
 
 This is a **single-instance** implementation. One nonqueued write admission gate protects quota check/write transactions and four read slots bound concurrent metadata/database download reads; download slots remain held until the response stream is disposed. No unbounded account-lock dictionary or queue is created. A pre-model-binding resource filter admits at most two multipart uploads, rejecting excess requests before buffering. Reverse-proxy request/rate/concurrency limits remain necessary at the network edge. Multipart bytes are not Base64 embedded into conversation sync, avoiding its expansion and history-sync failure coupling. Include the library endpoint explicitly in deployment body limits (10 MiB plus multipart overhead), rather than broadly raising every anonymous endpoint limit. MySQL `max_allowed_packet` must also support the configured maximum binary insert (default 64 MiB is sufficient).
 
@@ -34,6 +36,8 @@ Fresh `--init-db` includes the library tables. Back up and stop the application 
 
 - MySQL: `src/RelaxKon.Auth/Resources/library/mysql-upgrade.sql`
 - SQLite: `src/RelaxKon.Auth/Resources/library/sqlite-upgrade.sql`
+
+For an existing `LibraryQuota` table without the `MaxHistoryBytes` column, apply `mysql-history-quota-upgrade.sql` or `sqlite-history-quota-upgrade.sql` from the same directory once before starting the new backend. The nullable column preserves the existing effective history limit until an administrator saves the settings.
 
 Do **not** rerun `--init-db` on an existing database. The scripts preserve existing files, accounts and chat rows. Startup preflight identifies a missing table; normal startup never creates/changes the schema. Rolling back application binaries leaves the additive table intact; do not drop it if users have saved files.
 

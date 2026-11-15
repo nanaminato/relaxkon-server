@@ -31,8 +31,9 @@ public sealed class LibraryController(AuthContext database, IOptions<LibraryOpti
     private async Task<LibraryLimits> Limits(CancellationToken token)
     {
         return await database.Set<LibraryQuota>().AsNoTracking().Where(row => row.Id == 1)
-            .Select(row => new LibraryLimits(row.MaxBytes, row.MaxFileBytes)).SingleOrDefaultAsync(token)
-            ?? new LibraryLimits(options.Value.MaxBytes, options.Value.MaxFileBytes);
+            .Select(row => new LibraryLimits(row.MaxBytes, row.MaxFileBytes, row.MaxHistoryBytes ?? row.MaxBytes))
+            .SingleOrDefaultAsync(token)
+            ?? new LibraryLimits(options.Value.MaxBytes, options.Value.MaxFileBytes, options.Value.MaxBytes);
     }
 
     [HttpGet("limits"), Authorize(Policy = "admin")]
@@ -44,20 +45,23 @@ public sealed class LibraryController(AuthContext database, IOptions<LibraryOpti
             var limits = await Limits(token);
             var usedBytes = await database.Set<LibraryFile>().SumAsync(file => (long?)file.Size, token) ?? 0;
             var historyUsedBytes = await HistoryBytes(database.Set<LibraryRevision>(), token);
-            return Ok(new { limits.MaxBytes, limits.MaxFileBytes, UsedBytes = usedBytes, HistoryUsedBytes = historyUsedBytes });
+            return Ok(new { limits.MaxBytes, limits.MaxFileBytes, limits.MaxHistoryBytes,
+                UsedBytes = usedBytes, HistoryUsedBytes = historyUsedBytes });
         }
         finally { admission.Reads.Release(); }
     }
 
     [HttpPut("limits"), Authorize(Policy = "admin")]
-    public async Task<IActionResult> SetLimits(LibraryLimits request, CancellationToken token)
+    public async Task<IActionResult> SetLimits(UpdateLibraryLimits request, CancellationToken token)
     {
-        if (!(new LibraryOptions { MaxBytes = request.MaxBytes, MaxFileBytes = request.MaxFileBytes }).IsValid())
+        if (!(new LibraryOptions { MaxBytes = request.MaxBytes, MaxFileBytes = request.MaxFileBytes }).IsValid()
+            || request.MaxHistoryBytes is < 0 or > LibraryOptions.HardStorageLimit)
             return BadRequest();
         if (!await admission.Writes.WaitAsync(0, token)) return Busy();
         try
         {
             var quota = await database.Set<LibraryQuota>().FindAsync([1], token);
+            var historyBudget = request.MaxHistoryBytes ?? quota?.MaxHistoryBytes ?? quota?.MaxBytes ?? options.Value.MaxBytes;
             if (quota is null)
             {
                 quota = new LibraryQuota();
@@ -65,8 +69,9 @@ public sealed class LibraryController(AuthContext database, IOptions<LibraryOpti
             }
             quota.MaxBytes = request.MaxBytes;
             quota.MaxFileBytes = request.MaxFileBytes;
+            quota.MaxHistoryBytes = historyBudget;
             await database.SaveChangesAsync(token);
-            return Ok(request);
+            return Ok(new LibraryLimits(quota.MaxBytes, quota.MaxFileBytes, historyBudget));
         }
         finally { admission.Writes.Release(); }
     }
@@ -84,7 +89,7 @@ public sealed class LibraryController(AuthContext database, IOptions<LibraryOpti
                 .ToListAsync(token);
             var limits = await Limits(token);
             return Ok(new LibraryListing(items, items.Sum(f => f.Size), limits.MaxBytes,
-                limits.MaxFileBytes, options.Value.MaxFiles, await HistoryBytes(OwnedHistory, token), limits.MaxBytes));
+                limits.MaxFileBytes, options.Value.MaxFiles, await HistoryBytes(OwnedHistory, token), limits.MaxHistoryBytes));
         }
         finally { admission.Reads.Release(); }
     }
@@ -163,7 +168,8 @@ public sealed class LibraryController(AuthContext database, IOptions<LibraryOpti
 
             if (id is not null)
             {
-                var previous = previousSize > limits.MaxBytes ? null : await Owned.Where(f => f.Id == id && f.Version == version)
+                var previous = limits.MaxHistoryBytes == 0 || previousSize > limits.MaxHistoryBytes
+                    ? null : await Owned.Where(f => f.Id == id && f.Version == version)
                     .Select(f => new LibraryRevision { FileId = f.Id, Version = f.Version, Name = f.Name,
                         Content = f.Content, UpdatedAt = f.UpdatedAt }).SingleOrDefaultAsync(token);
                 var updated = DateTime.UtcNow;
@@ -182,7 +188,7 @@ public sealed class LibraryController(AuthContext database, IOptions<LibraryOpti
                     .Skip(RetainedRevisions).Select(r => r.Version).ToListAsync(token);
                 if (expired.Count > 0)
                     await revisions.Where(r => r.FileId == id && expired.Contains(r.Version)).ExecuteDeleteAsync(token);
-                await TrimHistory(limits.MaxBytes, token);
+                await TrimHistory(limits.MaxHistoryBytes, token);
                 var item = await Owned.Where(f => f.Id == id)
                     .Select(f => new LibraryItem(f.Id, f.Name, f.ContentType, f.Size, f.CreatedAt, f.UpdatedAt, f.Version))
                     .SingleAsync(token);
@@ -194,6 +200,7 @@ public sealed class LibraryController(AuthContext database, IOptions<LibraryOpti
                 Size = file.Length, Content = content };
             database.Add(entity);
             await database.SaveChangesAsync(token);
+            if (document) await TrimHistory(limits.MaxHistoryBytes, token);
             await transaction.CommitAsync(token);
             return Created($"api/library/{entity.Id}/content", Item(entity));
         }
@@ -205,6 +212,12 @@ public sealed class LibraryController(AuthContext database, IOptions<LibraryOpti
 
     private async Task TrimHistory(long budget, CancellationToken token)
     {
+        if (budget == 0)
+        {
+            await OwnedHistory.ExecuteDeleteAsync(token);
+            return;
+        }
+
         var excess = await HistoryBytes(OwnedHistory, token) - budget;
         if (excess <= 0) return;
 
