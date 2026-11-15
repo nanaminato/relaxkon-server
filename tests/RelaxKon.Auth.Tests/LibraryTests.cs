@@ -122,6 +122,41 @@ public class LibraryTests
         await controller.Delete(saved.Id, 1, default);
         Assert.That(await controller.Upload(UploadFile(), default), Is.TypeOf<CreatedResult>());
     }
+    [Test] public async Task History_has_a_separate_account_budget_and_evicts_oldest_versions()
+    {
+        await using var db = Database();
+        var limits = new LibraryOptions { MaxFileBytes = 4, MaxBytes = 6 };
+        var owner = Controller(db, admission, limits: limits);
+        var other = Controller(db, admission, account: 2, limits: limits);
+        var original = UploadFile(System.Text.Encoding.UTF8.GetBytes("测a"));
+        var first = (LibraryItem)((CreatedResult)await owner.CreateDocument(original, default)).Value!;
+        var second = (LibraryItem)((CreatedResult)await owner.CreateDocument(UploadFile([65, 66]), default)).Value!;
+        var third = (LibraryItem)((CreatedResult)await other.CreateDocument(UploadFile([65, 66]), default)).Value!;
+        Assert.That(await owner.UpdateDocument(first.Id, UploadFile([]), 1, default), Is.TypeOf<OkObjectResult>());
+        Assert.That(await other.UpdateDocument(third.Id, UploadFile([]), 1, default), Is.TypeOf<OkObjectResult>());
+        Assert.That(await owner.UpdateDocument(second.Id, UploadFile([65, 66, 67]), 1, default), Is.TypeOf<OkObjectResult>());
+        var listing = (LibraryListing)((OkObjectResult)await owner.List(default)).Value!;
+        Assert.That(listing.UsedBytes, Is.EqualTo(3));
+        Assert.That(listing.HistoryUsedBytes, Is.EqualTo(6));
+        Assert.That(listing.MaxHistoryBytes, Is.EqualTo(6));
+
+        Assert.That(await owner.UpdateDocument(second.Id, UploadFile([]), 2, default), Is.TypeOf<OkObjectResult>());
+        Assert.That(await db.Set<LibraryRevision>().AnyAsync(r => r.FileId == first.Id), Is.False);
+        Assert.That(await db.Set<LibraryRevision>().CountAsync(r => r.FileId == second.Id), Is.EqualTo(2));
+        Assert.That(await db.Set<LibraryRevision>().CountAsync(r => r.FileId == third.Id), Is.EqualTo(1));
+        listing = (LibraryListing)((OkObjectResult)await owner.List(default)).Value!;
+        Assert.That(listing.UsedBytes, Is.Zero);
+        Assert.That(listing.HistoryUsedBytes, Is.EqualTo(5));
+    }
+    [Test] public void MySql_can_aggregate_revision_sizes_in_sql()
+    {
+        using var db = new AuthContext(new DbContextOptionsBuilder<AuthContext>()
+            .UseMySql("Server=localhost;Database=unused", ServerVersion.Parse("8.4.6-mysql")).Options,
+            new ConfigurationBuilder().Build());
+        var sql = db.Set<LibraryRevision>().GroupBy(revision => revision.FileId)
+            .Select(group => group.Sum(revision => (long?)revision.Content.Length)).ToQueryString();
+        Assert.That(sql, Does.Match("(?i)SUM\\(.*LENGTH\\("));
+    }
     [TestCase("../private.txt")][TestCase("folder\\file.txt")][TestCase("bad\nname")][TestCase(" ")]
     public async Task Filenames_cannot_inject_paths_or_headers(string name)
     {

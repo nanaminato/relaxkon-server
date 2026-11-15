@@ -16,7 +16,7 @@ public sealed class LibraryFile
 public sealed record LibraryItem(string Id, string Name, string ContentType, long Size,
     DateTime CreatedAt, DateTime UpdatedAt, long Version);
 public sealed record LibraryListing(IReadOnlyList<LibraryItem> Items, long UsedBytes, long MaxBytes,
-    long MaxFileBytes, int MaxFiles);
+    long MaxFileBytes, int MaxFiles, long HistoryUsedBytes, long MaxHistoryBytes);
 public sealed record RenameLibraryFile(string Name, long Version);
 
 public sealed class LibraryQuota
