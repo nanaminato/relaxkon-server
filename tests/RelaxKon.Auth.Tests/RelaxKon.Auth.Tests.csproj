@@ -24,6 +24,7 @@
       <EmbeddedResource Include="Fixtures/registration-email-verification.sql" LogicalName="RegistrationEmail.sql" />
       <EmbeddedResource Include="Fixtures/model-catalog-refresh.sql" LogicalName="ModelCatalogRefresh.sql" />
       <EmbeddedResource Include="Fixtures/routing-weight-upgrade.sql" LogicalName="RoutingWeight.sql" />
+      <EmbeddedResource Include="../../src/RelaxKon.Auth/Resources/merge/child-api-keys.sql" LogicalName="ChildApiKeys.sql" />
       <EmbeddedResource Include="Fixtures/architecture-upgrade.sql" LogicalName="ArchitectureUpgrade.sql" />
     </ItemGroup>
 

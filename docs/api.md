@@ -28,6 +28,25 @@ Authorization: Bearer <token>
 - `GET /api/auth/sessions`、`DELETE /api/auth/sessions/{sessionId}`：查看或踢出某个设备会话。
 - `POST /api/account/change-password`：登录后传入 `currentPassword`、`newPassword`、`confirmPassword`；成功后会退出全部设备。
 
+## 管理员子 API Key
+
+管理员登录后台，在「子 API Key」选择已启用的供应商 Key、填写名称和有效期。完整子 Key 只在签发时显示。每位管理员仅能管理自己签发的子 Key。子 Key 过期、被撤销、父 Key 停用或签发者失去管理员角色后，后续调用会被拒绝。
+
+外部调用时，在 RelaxKon 的 `/api/native` 后加供应商的原生路径。例如 OpenAI SDK 的 Base URL 为 `https://你的服务/api/native/v1`，API Key 填生成的 `rk_…`。Anthropic 和 Gemini SDK 的 Base URL 为 `https://你的服务/api/native`。OpenAI 兼容客户端使用 Bearer，Anthropic 和 Gemini 客户端也可分别发送 `x-api-key` 和 `x-goog-api-key`。Gemini 流式请求仍使用原生的 `?alt=sse`。
+
+| 供应商协议 | 第一版转发范围 |
+| --- | --- |
+| OpenAI 兼容 | Chat Completions、Responses、模型查询、Embeddings、图片生成/编辑/变体、音频和视频提交/查询 |
+| Anthropic | Messages、计数和模型查询 |
+| Gemini | 模型查询、内容生成及 SSE、计数、向量、图片/媒体预测及操作查询 |
+| Alibaba | OpenAI 兼容端点，以及列入允许范围的 DashScope 文本、多模态、生图和任务查询 |
+| APIMart | 兼容路径中的生图和原生任务查询 |
+| Novita | `/v3/openai` 聊天、模型查询，以及 `/v3/async` 文生图、图生图和任务查询 |
+
+上游是否支持具体能力由所绑 Key 的配置和供应商决定。子 Key 只连接绑定的 HTTPS 上游，使用其当前凭证，并保留上游 HTTP 状态码、响应体和 SSE。转发端点共享签发账户的 `chat` 频率及并发配额。仅允许已配置的原生操作，供应商管理、文件 API 和 WebSocket 不在第一版范围内。调用同一上游凭证的多个子 Key 共享该凭证可以访问的上游资源。
+
+现有数据库须在启动新版本前执行对应的升级脚本。[MySQL](../src/RelaxKon.Auth/Resources/merge/child-api-keys.sql) · [SQLite](../src/RelaxKon.Auth/Resources/sqlite/child-api-keys.sql)
+
 ## 聊天
 
 调用者须已认证并获得持久化策略中的 `chat` 功能授权，`model` 必须配置可用路由。客户端声明 `Accept: text/event-stream` 时返回 SSE：

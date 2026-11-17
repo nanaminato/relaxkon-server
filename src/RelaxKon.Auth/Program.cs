@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.Authentication;
+using RelaxKon.Auth.Security.ChildKeys;
 using RelaxKon.Auth.Security.AuthSecurity;
 using RelaxKon.Auth.Data;
 using RelaxKon.Auth.Application.Media;
@@ -189,6 +191,13 @@ builder.Services.AddSingleton<IImageTaskReceipts>(services => services.GetRequir
 builder.Services.AddScoped<APIMartImageService>();
 builder.Services.AddMemoryCache(); // 添加内存缓存支持
 builder.Services.AddHttpClient();
+builder.Services.AddHttpClient(NativeProviderController.ClientName)
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+    {
+        AllowAutoRedirect = false,
+        UseCookies = false
+    })
+    .RemoveAllLoggers();
 builder.Services.AddHttpClient("AiProvider", client =>
 {
     client.Timeout = TimeSpan.FromMinutes(5);
@@ -304,6 +313,8 @@ builder.Services.AddAuthentication(options =>
             }
         };
     });
+builder.Services.AddAuthentication().AddScheme<AuthenticationSchemeOptions, ChildKeyAuthentication>(
+    ChildKeyAuthentication.SchemeName, _ => { });
 builder.Services.TryAddEnumerable(
     ServiceDescriptor.Singleton<IPostConfigureOptions<JwtBearerOptions>,
         ConfigureJwtBearerOptions>());
