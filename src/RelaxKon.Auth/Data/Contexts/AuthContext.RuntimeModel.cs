@@ -1,3 +1,4 @@
+using RelaxKon.Auth.Application.Chat;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
@@ -35,6 +36,27 @@ public partial class AuthContext
         });
         modelBuilder.Entity<RefreshToken>().HasIndex(token => new { token.AccountId, token.RevokedAt, token.ExpiresAt })
             .HasDatabaseName("IX_RefreshTokens_AccountId_RevokedAt_ExpiresAt");
+        modelBuilder.Entity<ChatGeneration>(entity =>
+        {
+            entity.ToTable("ChatGenerations");
+            entity.HasKey(job => new { job.AccountId, job.Id });
+            entity.Property(job => job.Id).HasMaxLength(32);
+            entity.Property(job => job.State).HasMaxLength(16);
+            entity.Property(job => job.ErrorCode).HasMaxLength(80);
+            entity.Property(job => job.SourceFingerprint).HasMaxLength(64);
+            entity.Property(job => job.Model).HasMaxLength(200);
+            entity.HasIndex(job => new { job.State, job.LeaseUntil });
+            entity.HasIndex(job => new { job.AccountId, job.HistoryId, job.CreatedAt });
+            entity.HasOne<Account>().WithMany().HasForeignKey(job => job.AccountId).OnDelete(DeleteBehavior.Cascade);
+        });
+        modelBuilder.Entity<ChatGenerationFrame>(entity =>
+        {
+            entity.ToTable("ChatGenerationFrames");
+            entity.HasKey(frame => new { frame.AccountId, frame.JobId, frame.Sequence });
+            entity.Property(frame => frame.JobId).HasMaxLength(32);
+            entity.HasOne<ChatGeneration>().WithMany().HasForeignKey(frame => new { frame.AccountId, frame.JobId })
+                .OnDelete(DeleteBehavior.Cascade);
+        });
         modelBuilder.Entity<GenerateTask>(entity =>
         {
             entity.ToTable("GenerateTasks");

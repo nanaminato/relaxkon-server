@@ -82,7 +82,7 @@ public class FeatureAccessTests
                 Assert.That(type.GetCustomAttributes<AuthorizeAttribute>().Any(), Is.True);
                 continue; // Receipt registration only; signed token verified, no provider call.
             }
-            if (type.Name == "ChatController" && method.Name is "GetChatModels" or "ReadJob" or "StopJob")
+            if (type.Name == "ChatController" && method.Name is "GetChatModels" or "ReadJob" or "StopJob" or "DiscoverJobs")
             {
                 Assert.That(type.GetCustomAttributes<AuthorizeAttribute>().Any(), Is.True);
                 continue; // Authenticated discovery or access to an existing job. No provider call.

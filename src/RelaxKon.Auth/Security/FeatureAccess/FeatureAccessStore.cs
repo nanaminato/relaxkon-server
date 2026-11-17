@@ -102,13 +102,25 @@ public sealed class FeatureAccessStore(IConfiguration configuration, IOptions<Fe
         }
         await command.ExecuteNonQueryAsync();
     }
-    public async Task<Admission> Acquire(int accountId, EffectiveFeature feature, CancellationToken token,
-        IPAddress? sourceIp = null, bool withinChat = false)
+    public Task<Admission> Acquire(int accountId, EffectiveFeature feature, CancellationToken token,
+        IPAddress? sourceIp = null, bool withinChat = false) =>
+        AcquireCore(accountId, feature, token, sourceIp, withinChat, countRequest: true);
+
+    internal static string FingerprintSource(IPAddress? sourceIp) => Convert.ToHexString(SourceKey(sourceIp));
+
+    internal Task<Admission> AcquireRecoveredChat(int accountId, EffectiveFeature feature,
+        string? sourceFingerprint, CancellationToken token) =>
+        AcquireCore(accountId, feature, token, null, withinChat: false, countRequest: false, sourceFingerprint);
+
+    private async Task<Admission> AcquireCore(int accountId, EffectiveFeature feature, CancellationToken token,
+        IPAddress? sourceIp, bool withinChat, bool countRequest, string? sourceFingerprint = null)
     {
         var countsTowardsTotal = !withinChat && feature.Key is not (TaskStatusFeature or ImageProxyFeature);
         var accountLimit = countsTowardsTotal ? concurrency.MaxConcurrentPerAccount : null;
         var sourceLimit = countsTowardsTotal ? concurrency.MaxConcurrentPerSourceIp : null;
-        var sourceKey = sourceLimit.HasValue ? SourceKey(sourceIp) : null;
+        var sourceKey = sourceLimit.HasValue
+            ? sourceFingerprint is null ? SourceKey(sourceIp) : Convert.FromHexString(sourceFingerprint)
+            : null;
         await using var connection = await Open(token);
         // The admission locks serialize inserts. READ COMMITTED avoids range gap locks
         // between otherwise independent admissions when pruning expired leases in MySQL.
@@ -144,8 +156,8 @@ public sealed class FeatureAccessStore(IConfiguration configuration, IOptions<Fe
         await using var active = Command(connection, transaction,
             "SELECT COUNT(*) FROM FeatureAccessLeases WHERE AccountId=@account AND FeatureKey=@feature", args);
         var concurrent = Convert.ToInt64(await active.ExecuteScalarAsync(token));
-        var retry = feature.RequestsPerDay is { } daily && dayCount >= daily ? 86400 - now % 86400
-            : feature.RequestsPerMinute is { } rate && minuteCount >= rate ? 60 - now % 60
+        var retry = countRequest && feature.RequestsPerDay is { } daily && dayCount >= daily ? 86400 - now % 86400
+            : countRequest && feature.RequestsPerMinute is { } rate && minuteCount >= rate ? 60 - now % 60
             : feature.MaxConcurrent is { } max && concurrent >= max ? 1 : 0;
         if (retry > 0) return new(null, (int)retry);
         var utcNow = provider.Choose("UTC_TIMESTAMP()", "datetime('now')");
@@ -164,10 +176,13 @@ public sealed class FeatureAccessStore(IConfiguration configuration, IOptions<Fe
             if (Convert.ToInt64(await sourceActive.ExecuteScalarAsync(token)) >= sourceMax) return new(null, 1);
         }
         var id = Guid.NewGuid().ToString("N");
-        await using (var update = Command(connection, transaction,
-            "UPDATE FeatureAccessUsage SET MinuteWindow=@minute,DayWindow=@day,MinuteCount=@mc,DayCount=@dc WHERE AccountId=@account AND FeatureKey=@feature",
-            args.Concat(new (string, object?)[] { ("@minute", now/60), ("@day", now/86400), ("@mc", minuteCount+1), ("@dc", dayCount+1) }).ToArray()))
-            await update.ExecuteNonQueryAsync(token);
+        if (countRequest)
+        {
+            await using (var update = Command(connection, transaction,
+                "UPDATE FeatureAccessUsage SET MinuteWindow=@minute,DayWindow=@day,MinuteCount=@mc,DayCount=@dc WHERE AccountId=@account AND FeatureKey=@feature",
+                args.Concat(new (string, object?)[] { ("@minute", now/60), ("@day", now/86400), ("@mc", minuteCount+1), ("@dc", dayCount+1) }).ToArray()))
+                await update.ExecuteNonQueryAsync(token);
+        }
         await using (var lease = Command(connection, transaction,
             provider.Choose("INSERT INTO FeatureAccessLeases (LeaseId,AccountId,FeatureKey,ExpiresAt) VALUES (@id,@account,@feature,DATE_ADD(UTC_TIMESTAMP(),INTERVAL 90 SECOND))",
                 "INSERT INTO FeatureAccessLeases (LeaseId,AccountId,FeatureKey,ExpiresAt) VALUES (@id,@account,@feature,datetime('now','+90 seconds'))"),

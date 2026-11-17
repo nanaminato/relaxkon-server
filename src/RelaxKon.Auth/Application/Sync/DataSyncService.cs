@@ -1,3 +1,4 @@
+using RelaxKon.Auth.Application.Chat;
 using System.Data;
 using System.Security.Cryptography;
 using System.Text;
@@ -215,7 +216,13 @@ public sealed class DataSyncService(AuthContext database)
     {
         var id = NumericId(mutation);
         var history = await database.ChatHistories!.SingleOrDefaultAsync(item => item.UserId == accountId && item.DataId == id, token);
-        if (mutation.Action == "delete") { if (history is not null) database.Remove(history); return null; }
+        if (mutation.Action == "delete")
+        {
+            await database.Set<ChatGeneration>().Where(job => job.AccountId == accountId && job.HistoryId == id)
+                .ExecuteDeleteAsync(token);
+            if (history is not null) database.Remove(history);
+            return null;
+        }
         if (history is null) { history = new ChatHistory { UserId = accountId, DataId = id }; database.Add(history); }
         history.Title = Payload<ChatHistory>(mutation).Title;
         return HistoryJson(history);
@@ -232,7 +239,13 @@ public sealed class DataSyncService(AuthContext database)
         }
         var message = await database.ChatMessages!.Include(item => item.FileList)
             .SingleOrDefaultAsync(item => item.ChatHistoryId == history.ChatHistoryId && item.DataId == id, token);
-        if (mutation.Action == "delete") { if (message is not null) database.Remove(message); return null; }
+        if (mutation.Action == "delete")
+        {
+            await database.Set<ChatGeneration>().Where(job => job.AccountId == accountId &&
+                    job.HistoryId == mutation.HistoryId && job.MessageId == id).ExecuteDeleteAsync(token);
+            if (message is not null) database.Remove(message);
+            return null;
+        }
         var incoming = Payload<MMessage>(mutation);
         if (message is null) { message = new ChatMessage { DataId = id, ChatHistory = history }; database.Add(message); }
         else database.RemoveRange(message.FileList ?? []);

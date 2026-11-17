@@ -100,99 +100,97 @@ public class ChatController : Controller
     [FeatureAccess("chat", ContinueAfterDisconnect = true)]
     [HttpPost("chat/jobs/{id:guid}")]
     public async Task StartJob(Guid id, ChatCompletionRequest body, [FromServices] ChatJobs jobs,
-        [FromServices] IHostApplicationLifetime lifetime)
+        [FromServices] ChatJobRunner runner, [FromServices] IHostApplicationLifetime lifetime)
     {
         if (FeatureIdentity.AccountId(User) is not int account)
         {
             Response.StatusCode = 401;
             return;
         }
-        if (jobs.Find(account, id) is not null)
+
+        var jobId = id.ToString("N");
+        var request = await ResolveRequest(body, account);
+        if (!await jobs.Enqueue(account, jobId, request, FeatureAccessStore.FingerprintSource(HttpContext.Connection.RemoteIpAddress),
+            body.AssistantMessageId, HttpContext.RequestAborted))
         {
             Response.StatusCode = 409;
             return;
         }
-        var job = jobs.Start(account, id);
-        if (job is null)
-        {
-            Response.StatusCode = 429;
-            Response.Headers.RetryAfter = "60";
-            return;
-        }
 
         OperationsAnalyticsMiddleware.SetModel(HttpContext, body.Model);
-        using var work = CancellationTokenSource.CreateLinkedTokenSource(HttpContext.RequestAborted,
-            lifetime.ApplicationStopping, job.StopToken);
-        work.CancelAfter(TimeSpan.FromMinutes(10));
         Response.StatusCode = 202;
         Response.Headers.CacheControl = "no-store";
         Response.ContentLength = 0;
         try { await Response.CompleteAsync(); }
         catch (Exception error) when (error is IOException or OperationCanceledException) { }
 
-        string? failure = null;
-        try
-        {
-            var request = await ResolveRequest(body, account);
-            await foreach (var chunk in _chat.StreamEvents(request, work.Token))
-            {
-                var frame = chunk.Attachment is null ? new ChatStreamEventResponse("delta", Text: chunk.Text ?? "")
-                    : new ChatStreamEventResponse("attachment", Attachment: chunk.Attachment);
-                if (!job.Append(frame))
-                {
-                    failure = "chat_output_size";
-                    break;
-                }
-            }
-        }
-        catch (OperationCanceledException) when (job.StopToken.IsCancellationRequested) { }
-        catch (Exception error)
-        {
-            OperationsAnalyticsMiddleware.MarkError(HttpContext);
-            _logger.LogError("Chat generation failed. TraceId: {TraceId}; ExceptionType: {ExceptionType}",
-                HttpContext.TraceIdentifier, error.GetType().Name);
-            failure = error switch
-            {
-                ChatAttachmentException attachment => attachment.Code,
-                KeyNotFoundException => "model_unavailable",
-                NotSupportedException => "chat_unsupported",
-                _ => "ai_unavailable"
-            };
-        }
-        finally { job.Finish(failure); }
+        using var work = CancellationTokenSource.CreateLinkedTokenSource(HttpContext.RequestAborted, lifetime.ApplicationStopping);
+        // A shutdown before the claim leaves the original request recoverable.
+        if (!work.IsCancellationRequested && await jobs.Claim(account, jobId, work.Token) is { } claimed)
+            await runner.Run(account, jobId, claimed, work.Token);
+    }
+
+    [HttpGet("chat/jobs")]
+    public async Task<IActionResult> DiscoverJobs(long historyId, [FromServices] ChatJobs jobs, CancellationToken token)
+    {
+        if (historyId is < 1 or > 9007199254740991) return BadRequest();
+        if (FeatureIdentity.AccountId(User) is not int account) return Unauthorized();
+        Response.Headers.CacheControl = "no-store";
+        return Ok(await jobs.ForHistory(account, historyId, token));
     }
 
     [HttpGet("chat/jobs/{id:guid}")]
     public async Task ReadJob(Guid id, [FromQuery] int offset, [FromServices] ChatJobs jobs)
     {
         if (offset < 0) { Response.StatusCode = 400; return; }
-        var job = FeatureIdentity.AccountId(User) is int account ? jobs.Find(account, id) : null;
-        if (job is null) { Response.StatusCode = 404; return; }
+        if (FeatureIdentity.AccountId(User) is not int account) { Response.StatusCode = 404; return; }
 
         var token = HttpContext.RequestAborted;
-        Response.Headers.CacheControl = "no-store";
-        Response.ContentType = "text/event-stream; charset=utf-8";
-        Response.Headers["X-Accel-Buffering"] = "no";
+        var jobId = id.ToString("N");
+        var heartbeat = TimeProvider.System.GetTimestamp();
         try
         {
+            var page = await jobs.Read(account, jobId, offset, token);
+            if (page is null)
+            {
+                Response.StatusCode = 404;
+                await Response.WriteAsJsonAsync(new { code = "chat_job_missing" }, token);
+                return;
+            }
+            if (offset > page.Count) { Response.StatusCode = 400; return; }
+
+            Response.Headers.CacheControl = "no-store";
+            Response.ContentType = "text/event-stream; charset=utf-8";
+            Response.Headers["X-Accel-Buffering"] = "no";
+            await Response.StartAsync(token);
             while (true)
             {
-                var (frame, changed, completed) = job.At(offset);
-                if (frame is not null)
+                foreach (var frame in page.Frames)
                 {
                     await ChatStreamWriter.Write(Response, frame.Type, token, frame.Text, frame.Code, frame.Attachment);
-                    if (frame.Type is "completed" or "error") return;
                     offset++;
                 }
-                else if (completed) return;
-                else
+                if (page.Finished && offset >= page.Count)
                 {
-                    try { await changed.WaitAsync(TimeSpan.FromSeconds(15), token); }
-                    catch (TimeoutException)
+                    await ChatStreamWriter.Write(Response, page.ErrorCode is null ? "completed" : "error", token,
+                        code: page.ErrorCode);
+                    return;
+                }
+                if (page.Frames.Length == 0)
+                {
+                    if (TimeProvider.System.GetElapsedTime(heartbeat) >= TimeSpan.FromSeconds(15))
                     {
                         await Response.WriteAsync(": keep-alive\n\n", token);
                         await Response.Body.FlushAsync(token);
+                        heartbeat = TimeProvider.System.GetTimestamp();
                     }
+                    await Task.Delay(250, token);
+                }
+                page = await jobs.Read(account, jobId, offset, token);
+                if (page is null)
+                {
+                    await ChatStreamWriter.Write(Response, "error", token, code: "chat_job_missing");
+                    return;
                 }
             }
         }
@@ -200,13 +198,12 @@ public class ChatController : Controller
     }
 
     [HttpDelete("chat/jobs/{id:guid}")]
-    public IActionResult StopJob(Guid id, [FromServices] ChatJobs jobs)
+    public async Task<IActionResult> StopJob(Guid id, [FromServices] ChatJobs jobs, CancellationToken token)
     {
-        var job = FeatureIdentity.AccountId(User) is int account ? jobs.Find(account, id) : null;
-        if (job is null) return NotFound();
-        job.Stop();
-        return NoContent();
+        return FeatureIdentity.AccountId(User) is int account && await jobs.Stop(account, id.ToString("N"), token)
+            ? NoContent() : NotFound();
     }
+
 
     private async Task<ChatRequest> ResolveRequest(ChatCompletionRequest body, int? account)
     {

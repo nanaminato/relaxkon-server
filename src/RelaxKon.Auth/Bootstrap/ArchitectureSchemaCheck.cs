@@ -16,6 +16,8 @@ public static class ArchitectureSchemaCheck
         ["LibraryFiles"] = ["Id", "AccountId", "Name", "ContentType", "Size", "Content", "CreatedAt", "UpdatedAt", "Version"],
         ["Roles"] = ["Code", "Description"],
         ["FeatureAccessTasks"] = ["TaskId", "AccountId", "SupplierKeyId"],
+        ["ChatGenerations"] = ["AccountId", "Id", "State", "RequestJson", "SourceFingerprint", "ErrorCode", "CreatedAt", "LeaseUntil", "HistoryId", "MessageId", "Model", "FrameCount", "OutputBytes"],
+        ["ChatGenerationFrames"] = ["AccountId", "JobId", "Sequence", "Payload"],
         ["ChildApiKeys"] = ["Id", "AccountId", "SupplierKeyId", "Name", "Prefix", "SecretHash", "CreatedAt", "ExpiresAt", "RevokedAt"],
         ["RoutingConfiguration"] = ["Id", "Version"],
         ["SyncAccounts"] = ["AccountId", "Version"],
@@ -50,6 +52,8 @@ public static class ArchitectureSchemaCheck
         ["SyncAccounts"] = ["AccountId", "Version"],
         ["SyncChanges"] = ["AccountId", "Version", "OperationId", "RequestHash", "Kind", "Action", "EntityId", "HistoryId", "Payload"],
         ["RegistrationEmailChallenges"] = ["EmailHash", "CodeHash", "ExpiresAt", "NextSendAt", "AttemptsLeft"],
+        ["ChatGenerations"] = ["AccountId", "Id", "State", "RequestJson", "SourceFingerprint", "ErrorCode", "CreatedAt", "LeaseUntil", "HistoryId", "MessageId", "Model", "FrameCount", "OutputBytes"],
+        ["ChatGenerationFrames"] = ["AccountId", "JobId", "Sequence", "Payload"],
         ["ChildApiKeys"] = ["Id", "AccountId", "SupplierKeyId", "Name", "Prefix", "SecretHash", "CreatedAt", "ExpiresAt", "RevokedAt"],
         ["RoutingConfiguration"] = ["Id", "Version"],
     };
@@ -95,7 +99,7 @@ public static class ArchitectureSchemaCheck
             ("SyncChanges", "AccountId,Version"), ("SyncChanges", "AccountId,OperationId"), ("Roles", "Code"), ("AccountRoles", "AccountId,RoleId"),
             ("FeatureAccessPolicies", "Id"), ("FeatureAccessUsage", "AccountId,FeatureKey"),
             ("FeatureAccessLeases", "LeaseId"), ("FeatureAccessTasks", "TaskId"), ("RefreshTokens", "TokenHash"),
-            ("RoutingConfiguration", "Id"), ("SyncAccounts", "AccountId"), ("ChildApiKeys", "SecretHash") })
+            ("RoutingConfiguration", "Id"), ("SyncAccounts", "AccountId"), ("ChildApiKeys", "SecretHash"), ("ChatGenerations", "AccountId,Id"), ("ChatGenerationFrames", "AccountId,JobId,Sequence") })
         {
             // INTEGER PRIMARY KEY aliases the rowid and has no pragma_index_list entry.
             var primaryKey = await Read($"SELECT name FROM pragma_table_info('{table}') WHERE pk>0 ORDER BY pk");
@@ -151,7 +155,7 @@ public static class ArchitectureSchemaCheck
         }
         var indexes = await Read("SELECT TABLE_NAME,GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND NON_UNIQUE=0 GROUP BY TABLE_NAME,INDEX_NAME");
         foreach (var (table, fields) in new[] { ("ChatHistories", "UserId,DataId"), ("ChatMessages", "ChatHistoryId,DataId"),
-            ("SyncChanges", "AccountId,Version"), ("SyncChanges", "AccountId,OperationId"), ("Roles", "Code"), ("AccountRoles", "AccountId,RoleId"), ("ChildApiKeys", "SecretHash") })
+            ("SyncChanges", "AccountId,Version"), ("SyncChanges", "AccountId,OperationId"), ("Roles", "Code"), ("AccountRoles", "AccountId,RoleId"), ("ChildApiKeys", "SecretHash"), ("ChatGenerations", "AccountId,Id"), ("ChatGenerationFrames", "AccountId,JobId,Sequence") })
             if (!indexes.Any(row => row[0] == table && row[1] == fields)) missing.Add(table + " unique(" + fields + ")");
         var triggers = await Read("SELECT TRIGGER_NAME FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA=DATABASE()");
         foreach (var table in new[] { "Models", "SupplierKeys", "ModelKeyBinds", "AvailableModels" })

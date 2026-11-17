@@ -29,6 +29,7 @@ public class ArchitectureDatabaseTests
         await database.Execute(MySqlTestDatabase.Resource("PerformanceIndexes.sql"));
         await database.Execute(MySqlTestDatabase.Resource("LibraryUpgrade.sql"));
         await database.Execute(MySqlTestDatabase.Resource("ChildApiKeys.sql"));
+        await database.Execute(MySqlTestDatabase.Resource("ChatGenerations.sql"));
         await RelaxKon.Auth.Bootstrap.ArchitectureSchemaCheck.Validate(connection.ConnectionString);
     }
 

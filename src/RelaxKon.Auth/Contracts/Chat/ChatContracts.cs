@@ -11,6 +11,8 @@ public sealed class ChatCompletionRequest
     [Required, StringLength(200)] public string Model { get; init; } = "";
     [Required, MinLength(1), NonNullItems] public ChatMessageRequest[] Messages { get; init; } = [];
     [StringLength(128), JsonProperty(NullValueHandling = NullValueHandling.Ignore)] public string? ConversationId { get; init; }
+    [Range(1L, 9007199254740991L), JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+    public long? AssistantMessageId { get; init; }
     public bool Stream { get; init; } = true;
     public bool Vision { get; init; }
     public ChatRequest ToApplication(int? accountId = null) => new()

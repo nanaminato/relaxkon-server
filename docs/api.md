@@ -70,6 +70,14 @@ data: {"type":"completed","text":null,"code":null}
 
 请求只包含 `messages`、`model`、`stream`、`vision`。采样、推理和输出参数由供应商使用模型默认值；旧客户端发送的生成参数不再绑定。Anthropic 协议必填的 `max_tokens` 保持 8192 兜底。`GET /api/ai/models` 返回当前可选模型，要求已认证。
 
+### 浏览器生成任务与恢复
+
+已受理的浏览器聊天任务保存在数据库。服务端逐段提交回复后才通过 SSE 发送，浏览器可用原任务 ID 和已读位置续读。会话内的恢复查询只返回当前账户的数据，删除会话或对应回复也会删除关联任务。
+
+如果进程重启，恢复服务会继续派发仍在排队的任务，并沿用原请求的计费次数。已派发的模型流缺少可验证的上游续接位置时，任务会标记为中断，原会话仍可读取此前已提交的内容。
+
+已有数据库在启动新版本之前须执行对应的增量脚本。 [MySQL](../src/RelaxKon.Auth/Resources/merge/chat-generations.sql) · [SQLite](../src/RelaxKon.Auth/Resources/sqlite/chat-generations.sql)
+
 ## 模型与密钥管理
 
 下列接口均要求 `admin` 角色：
