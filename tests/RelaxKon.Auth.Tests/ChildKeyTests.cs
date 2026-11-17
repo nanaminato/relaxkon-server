@@ -124,6 +124,75 @@ public class ChildKeyTests
         Assert.That((await Authenticate(context, keys, accounts)).Succeeded, Is.False);
     }
 
+    [Test]
+    public async Task Pages_owned_keys_by_status_and_moves_revoked_key_to_history()
+    {
+        var token = TestContext.CurrentContext.CancellationToken;
+        await using var connection = new SqliteConnection("Data Source=:memory:;Foreign Keys=True");
+        await connection.OpenAsync(token);
+        var configuration = new ConfigurationBuilder().Build();
+        await using var keys = new KeyContext(new DbContextOptionsBuilder<KeyContext>()
+            .UseSqlite(connection).Options, configuration);
+        await keys.Database.EnsureCreatedAsync(token);
+        await CheckPages(keys, token);
+    }
+
+    [Test, Explicit("Requires an isolated MySQL test database.")]
+    public async Task Mysql_filters_and_pages_owned_keys()
+    {
+        await using var fixture = await MySqlTestDatabase.Create();
+        await using var keys = fixture.Keys();
+        await CheckPages(keys, TestContext.CurrentContext.CancellationToken);
+    }
+
+    private static async Task CheckPages(KeyContext keys, CancellationToken token)
+    {
+        var primary = new SupplierKey { Enable = true, BaseUrl = "https://api.deepseek.com", ApiKey = "fixture" };
+        var secondary = new SupplierKey { Enable = false, BaseUrl = "https://api.openai.com", ApiKey = "fixture" };
+        keys.AddRange(primary, secondary);
+        await keys.SaveChangesAsync(token);
+        var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        ChildApiKey Key(int number, SupplierKey supplier, long expiresAt, int account = 1, long? revokedAt = null) => new()
+        {
+            AccountId = account, SupplierKey = supplier, ExpiresAt = expiresAt, RevokedAt = revokedAt,
+            Name = $"Task {number:D2}", Prefix = $"rk_unit{number:D2}", SecretHash = ChildApiKey.Hash($"fixture-{number}"),
+            CreatedAt = now - 120
+        };
+        var active = Enumerable.Range(1, 22).Select(index => Key(index, primary, now + 60 + index)).ToArray();
+        keys.AddRange(active);
+        keys.AddRange(Key(23, secondary, now + 120), Key(24, primary, now - 20),
+            Key(25, secondary, now + 120, revokedAt: now - 10), Key(26, secondary, now + 120, account: 2));
+        await keys.SaveChangesAsync(token);
+        var controller = Controller(1, keys);
+
+        async Task<ChildKeyController.KeyPage> Page(ChildKeyController.KeyPageQuery query)
+        {
+            var response = await controller.ListPage(query, token);
+            return (ChildKeyController.KeyPage)((OkObjectResult)response.Result!).Value!;
+        }
+
+        var first = await Page(new());
+        var last = await Page(new(Page: 999));
+        Assert.Multiple(() =>
+        {
+            Assert.That(first.Total, Is.EqualTo(22));
+            Assert.That(first.Items.Select(item => item.Id), Is.EqualTo(active.Take(20).Select(item => item.Id)));
+            Assert.That(last.Page, Is.EqualTo(2));
+            Assert.That(last.Items, Has.Count.EqualTo(2));
+            Assert.That(first.Suppliers.Select(supplier => supplier.Name), Is.EqualTo(new[] { "DeepSeek", "OpenAI" }));
+        });
+        Assert.That((await Page(new("attention", "task", secondary.SupplierKeyId))).Items.Single().Name, Is.EqualTo("Task 23"));
+        Assert.That((await Page(new("active", "RK_UNIT20", primary.SupplierKeyId))).Items.Single().Id, Is.EqualTo(active[19].Id));
+        Assert.That((await Page(new("active", "Task", secondary.SupplierKeyId))).Total, Is.Zero);
+        Assert.That((await Page(new("history"))).Items.Select(item => item.Name), Is.EqualTo(new[] { "Task 25", "Task 24" }));
+
+        Assert.That(await controller.Revoke(active[0].Id, token), Is.TypeOf<NoContentResult>());
+        var moved = (await Page(new("history"))).Items[0];
+        Assert.That(moved.Id, Is.EqualTo(active[0].Id));
+        Assert.That(moved.RevokedAt, Is.GreaterThanOrEqualTo(now));
+        Assert.That((await Page(new())).Total, Is.EqualTo(21));
+    }
+
     private static ChildKeyController Controller(int accountId, KeyContext keys)
     {
         var user = new ClaimsPrincipal(new ClaimsIdentity(
