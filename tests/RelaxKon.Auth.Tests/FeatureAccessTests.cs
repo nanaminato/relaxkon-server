@@ -82,7 +82,11 @@ public class FeatureAccessTests
                 Assert.That(type.GetCustomAttributes<AuthorizeAttribute>().Any(), Is.True);
                 continue; // Receipt registration only; signed token verified, no provider call.
             }
-            if (method.Name == "GetChatModels") continue; // Authenticated discovery, no provider call.
+            if (type.Name == "ChatController" && method.Name is "GetChatModels" or "ReadJob" or "StopJob")
+            {
+                Assert.That(type.GetCustomAttributes<AuthorizeAttribute>().Any(), Is.True);
+                continue; // Authenticated discovery or access to an existing job. No provider call.
+            }
             var feature = method.GetCustomAttribute<FeatureAccessAttribute>() ?? type.GetCustomAttribute<FeatureAccessAttribute>();
             Assert.That(feature, Is.Not.Null, $"{type.Name}.{method.Name}");
             Assert.That(FeaturePolicies.Keys, Does.Contain(feature!.Key));

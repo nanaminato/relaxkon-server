@@ -41,7 +41,8 @@ public sealed class FeatureAccessMiddleware(RequestDelegate next, ILogger<Featur
             await Error(context, 429, "feature_limit_exceeded", feature.Key); return;
         }
         using var heartbeatStop = new CancellationTokenSource();
-        using var request = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
+        using var request = feature.ContinueAfterDisconnect ? new CancellationTokenSource()
+            : CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
         var originalToken = context.RequestAborted;
         context.RequestAborted = request.Token;
         var heartbeat = Heartbeat(store, admission.LeaseId, heartbeatStop.Token, request, context);

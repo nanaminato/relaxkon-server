@@ -11,6 +11,7 @@ public sealed record EffectiveFeature(string Key, bool Enabled, int? RequestsPer
 public sealed class FeatureAccessAttribute(string key) : Attribute
 {
     public string Key { get; } = key;
+    public bool ContinueAfterDisconnect { get; set; }
 }
 
 public static class FeaturePolicies

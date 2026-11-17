@@ -44,13 +44,7 @@ public class ChatController : Controller
                 await WriteProblem(400, ApiMessages.Get("model_required"));
                 return;
             }
-            var request = chatBody.ToApplication(FeatureIdentity.AccountId(User));
-            if (request.Messages.Any(message => message.Content.Parts.Any(part =>
-                part.ImageUrl is not null || string.Equals(Path.GetExtension(part.Attachment?.FileName), ".pdf", StringComparison.OrdinalIgnoreCase))))
-            {
-                var models = await _modelRepository.GetChatModelsAsync();
-                request.Vision = models?.Any(model => model.ModelValue == request.Model && model.Vision) == true;
-            }
+            var request = await ResolveRequest(chatBody, FeatureIdentity.AccountId(User));
 
             await foreach (var chunk in _chat.StreamEvents(request, HttpContext.RequestAborted))
             {
@@ -101,6 +95,129 @@ public class ChatController : Controller
                 Response.Headers.RetryAfter = seconds.ToString(System.Globalization.CultureInfo.InvariantCulture);
             await WriteProblem(status, ApiMessages.Get(code), code);
         }
+    }
+
+    [FeatureAccess("chat", ContinueAfterDisconnect = true)]
+    [HttpPost("chat/jobs/{id:guid}")]
+    public async Task StartJob(Guid id, ChatCompletionRequest body, [FromServices] ChatJobs jobs,
+        [FromServices] IHostApplicationLifetime lifetime)
+    {
+        if (FeatureIdentity.AccountId(User) is not int account)
+        {
+            Response.StatusCode = 401;
+            return;
+        }
+        if (jobs.Find(account, id) is not null)
+        {
+            Response.StatusCode = 409;
+            return;
+        }
+        var job = jobs.Start(account, id);
+        if (job is null)
+        {
+            Response.StatusCode = 429;
+            Response.Headers.RetryAfter = "60";
+            return;
+        }
+
+        OperationsAnalyticsMiddleware.SetModel(HttpContext, body.Model);
+        using var work = CancellationTokenSource.CreateLinkedTokenSource(HttpContext.RequestAborted,
+            lifetime.ApplicationStopping, job.StopToken);
+        work.CancelAfter(TimeSpan.FromMinutes(10));
+        Response.StatusCode = 202;
+        Response.Headers.CacheControl = "no-store";
+        Response.ContentLength = 0;
+        try { await Response.CompleteAsync(); }
+        catch (Exception error) when (error is IOException or OperationCanceledException) { }
+
+        string? failure = null;
+        try
+        {
+            var request = await ResolveRequest(body, account);
+            await foreach (var chunk in _chat.StreamEvents(request, work.Token))
+            {
+                var frame = chunk.Attachment is null ? new ChatStreamEventResponse("delta", Text: chunk.Text ?? "")
+                    : new ChatStreamEventResponse("attachment", Attachment: chunk.Attachment);
+                if (!job.Append(frame))
+                {
+                    failure = "chat_output_size";
+                    break;
+                }
+            }
+        }
+        catch (OperationCanceledException) when (job.StopToken.IsCancellationRequested) { }
+        catch (Exception error)
+        {
+            OperationsAnalyticsMiddleware.MarkError(HttpContext);
+            _logger.LogError("Chat generation failed. TraceId: {TraceId}; ExceptionType: {ExceptionType}",
+                HttpContext.TraceIdentifier, error.GetType().Name);
+            failure = error switch
+            {
+                ChatAttachmentException attachment => attachment.Code,
+                KeyNotFoundException => "model_unavailable",
+                NotSupportedException => "chat_unsupported",
+                _ => "ai_unavailable"
+            };
+        }
+        finally { job.Finish(failure); }
+    }
+
+    [HttpGet("chat/jobs/{id:guid}")]
+    public async Task ReadJob(Guid id, [FromQuery] int offset, [FromServices] ChatJobs jobs)
+    {
+        if (offset < 0) { Response.StatusCode = 400; return; }
+        var job = FeatureIdentity.AccountId(User) is int account ? jobs.Find(account, id) : null;
+        if (job is null) { Response.StatusCode = 404; return; }
+
+        var token = HttpContext.RequestAborted;
+        Response.Headers.CacheControl = "no-store";
+        Response.ContentType = "text/event-stream; charset=utf-8";
+        Response.Headers["X-Accel-Buffering"] = "no";
+        try
+        {
+            while (true)
+            {
+                var (frame, changed, completed) = job.At(offset);
+                if (frame is not null)
+                {
+                    await ChatStreamWriter.Write(Response, frame.Type, token, frame.Text, frame.Code, frame.Attachment);
+                    if (frame.Type is "completed" or "error") return;
+                    offset++;
+                }
+                else if (completed) return;
+                else
+                {
+                    try { await changed.WaitAsync(TimeSpan.FromSeconds(15), token); }
+                    catch (TimeoutException)
+                    {
+                        await Response.WriteAsync(": keep-alive\n\n", token);
+                        await Response.Body.FlushAsync(token);
+                    }
+                }
+            }
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+    }
+
+    [HttpDelete("chat/jobs/{id:guid}")]
+    public IActionResult StopJob(Guid id, [FromServices] ChatJobs jobs)
+    {
+        var job = FeatureIdentity.AccountId(User) is int account ? jobs.Find(account, id) : null;
+        if (job is null) return NotFound();
+        job.Stop();
+        return NoContent();
+    }
+
+    private async Task<ChatRequest> ResolveRequest(ChatCompletionRequest body, int? account)
+    {
+        var request = body.ToApplication(account);
+        if (request.Messages.Any(message => message.Content.Parts.Any(part =>
+            part.ImageUrl is not null || string.Equals(Path.GetExtension(part.Attachment?.FileName), ".pdf", StringComparison.OrdinalIgnoreCase))))
+        {
+            var models = await _modelRepository.GetChatModelsAsync();
+            request.Vision = models?.Any(model => model.ModelValue == request.Model && model.Vision) == true;
+        }
+        return request;
     }
 
     private async Task WriteProblem(int statusCode, string title, string? code = null)

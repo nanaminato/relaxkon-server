@@ -16,7 +16,8 @@ public static class ChatStreamWriter
         if (!response.HasStarted)
         {
             response.ContentType = "text/event-stream; charset=utf-8";
-            response.Headers.CacheControl = "no-cache";
+            if (!response.Headers.ContainsKey("Cache-Control"))
+                response.Headers.CacheControl = "no-cache";
             response.Headers["X-Accel-Buffering"] = "no";
         }
         var payload = JsonSerializer.Serialize(new ChatStreamEventResponse(type, text, code, attachment), JsonOptions);
